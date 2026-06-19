@@ -588,11 +588,3 @@ function createHandler() {
 
 module.exports = { createHandler, searchAccounts, commandCenter, revenue, summarizeService, summarizeRmm, summarizeSecurity, latestHealth, envelope };
 
-
-
-
-
-
-
-
-

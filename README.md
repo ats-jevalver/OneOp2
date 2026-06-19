@@ -180,4 +180,3 @@ POST /api/v1/admin/store/reset
 - Production authentication.
 - Multi-tenant architecture design.
 
-
