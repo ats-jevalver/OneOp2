@@ -228,6 +228,33 @@ function validateIntegrationConfigurationPatch(body) {
   return errors;
 }
 
+function buildPsaSyncApply(integrationConnectionId, selectedRowIds = []) {
+  const preview = getPsaAdapter().previewCompanyContactSync();
+  const selected = new Set(selectedRowIds);
+  const rows = [...preview.companies.map(row => ({ ...row, recordType: 'company' })), ...preview.contacts.map(row => ({ ...row, recordType: 'contact' }))];
+  const appliedRows = [];
+  const skippedRows = [];
+  const conflictRows = [];
+  for (const row of rows) {
+    if (selected.size && !selected.has(row.rowId)) { skippedRows.push({ ...row, skipReason: 'not_selected' }); continue; }
+    if (row.action === 'conflict') { conflictRows.push({ ...row, skipReason: 'conflict_requires_review' }); continue; }
+    appliedRows.push({ ...row, appliedAt: now() });
+  }
+  return {
+    syncRunId: newId('sync'),
+    integrationConnectionId,
+    mode: 'apply_stub',
+    status: conflictRows.length ? 'completed_with_conflicts' : 'succeeded',
+    appliedByUserId: currentUser()?.userId,
+    appliedAt: now(),
+    counts: { selected: selected.size || rows.length, applied: appliedRows.length, skipped: skippedRows.length, conflicts: conflictRows.length },
+    appliedRows,
+    skippedRows,
+    conflictRows,
+    warnings: ['Sprint 7 apply is a controlled import stub. It records selected preview rows and audit history but does not call an external PSA API.']
+  };
+}
+
 function auditWriteBack({ accountId, actionType, targetRecordType, status, requestPayload, adapterResult = {}, recommendationId = null, generatedArtifactId = null, error = null }) {
   const audit = { writeBackAuditEventId: newId('audit'), accountId, actionType, targetRecordType, status, adapter: adapterResult.adapter || 'mock', requestSummary: requestPayload ? { title: requestPayload.title, accountId: requestPayload.accountId, externalCompanyId: requestPayload.externalCompanyId } : null, responseSummary: adapterResult.requestSummary || null, error, requestPayload, externalId: adapterResult.externalId || null, externalUrl: adapterResult.externalUrl || null, recommendationId, generatedArtifactId, createdAt: now() };
   store.add('writeBackAuditEvents', audit);
@@ -403,6 +430,27 @@ async function handleApi(req, res, url) {
     if (integration.systemType !== 'psa') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Sprint 7 sync preview currently supports PSA integrations only.', field: 'integrationConnectionId' }]));
     const preview = getPsaAdapter().previewCompanyContactSync();
     return json(res, 200, envelope({ integrationConnectionId: parts[4], systemName: integration.systemName, ...preview }));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'sync' && parts[6] === 'apply') {
+    if (!requireAdmin(res)) return;
+    const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
+    if (!integration) return notFound(res, 'Integration not found.');
+    if (integration.systemType !== 'psa') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Sprint 7 sync apply currently supports PSA integrations only.', field: 'integrationConnectionId' }]));
+    const body = await parseBody(req);
+    if (body.selectedRowIds !== undefined && (!Array.isArray(body.selectedRowIds) || body.selectedRowIds.some(item => typeof item !== 'string'))) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'selectedRowIds must be an array of row ID strings.', field: 'selectedRowIds' }]));
+    const summary = buildPsaSyncApply(parts[4], body.selectedRowIds || []);
+    store.add('syncHistory', summary);
+    store.add('activities', { activityId: newId('activity'), accountId: null, activityType: 'integration_sync_apply_stub', title: `${integration.systemName} sync apply stub`, body: `Applied ${summary.counts.applied} preview rows with ${summary.counts.conflicts} conflicts.`, status: summary.status, createdByUserId: currentUser()?.userId, createdAt: summary.appliedAt });
+    await store.flush();
+    return json(res, 200, envelope(summary));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'sync-history') {
+    if (!requireAdmin(res)) return;
+    const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
+    if (!integration) return notFound(res, 'Integration not found.');
+    return json(res, 200, envelope(store.list('syncHistory', run => run.integrationConnectionId === parts[4]).sort((a, b) => String(b.appliedAt).localeCompare(String(a.appliedAt)))));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/integrations/status') {

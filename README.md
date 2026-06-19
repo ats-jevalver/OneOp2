@@ -12,7 +12,7 @@ Sprint 4 added durable local JSON persistence, a repository-style store boundary
 
 Sprint 5 starts the integration-ready foundation: persistence provider diagnostics, PostgreSQL starter schema, hardened PSA adapter contracts, safer write-back audits, sync preview counts, integration capability status, artifact export, and email handoff guardrails. Sprint 6 activates PostgreSQL-backed runtime state, normalized-table reads, provider status UX, account plans, and generated-artifact review lifecycle controls.
 
-Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuration, admin-only sync preview for PSA companies/contacts, and safer foundations for future controlled imports.
+Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuration, admin-only sync preview for PSA companies/contacts, controlled sync apply stubs, and safer foundations for future imports.
 
 ## Current Features
 
@@ -42,7 +42,7 @@ Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuratio
 - QBR draft and customer email draft artifact endpoints.
 - Generated artifact markdown export, evidence appendix, review lifecycle, and customer email review handoff endpoints.
 - Integration capability status and sync preview count responses.
-- Sprint 7 admin PSA integration configuration and company/contact sync preview endpoints.
+- Sprint 7 admin PSA integration configuration, company/contact sync preview, controlled apply stub, and sync history endpoints.
 - Assistant prompt endpoint for call prep, risk rationale, and next actions.
 - Integration list and sync stub endpoint.
 - Product event tracking endpoint.
@@ -139,6 +139,8 @@ POST /api/v1/admin/integrations/:integrationConnectionId/sync
 GET  /api/v1/admin/integrations/:integrationConnectionId/configuration
 PATCH /api/v1/admin/integrations/:integrationConnectionId/configuration
 POST /api/v1/admin/integrations/:integrationConnectionId/sync-preview
+POST /api/v1/admin/integrations/:integrationConnectionId/sync/apply
+GET  /api/v1/admin/integrations/:integrationConnectionId/sync-history
 POST /api/v1/product-events
 ```
 

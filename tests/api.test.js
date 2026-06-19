@@ -112,6 +112,20 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.ok(result.body.data.counts.total >= 1);
     assert.ok(result.body.data.companies.some(row => row.action === 'conflict'));
 
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ selectedRowIds: ['psa_company_1001', 'psa_company_2001', 'psa_contact_5002'] }) });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.mode, 'apply_stub');
+    assert.equal(result.body.data.counts.applied, 2);
+    assert.equal(result.body.data.counts.conflicts, 1);
+    assert.ok(result.body.data.conflictRows.some(row => row.rowId === 'psa_company_2001'));
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync-history');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.some(run => run.mode === 'apply_stub' && run.counts.applied === 2));
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ selectedRowIds: 'psa_company_1001' }) });
+    assert.equal(result.response.status, 400);
+
     result = await request(baseUrl, '/api/v1/session/current-user', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: 'usr_am_jane' }) });
     assert.equal(result.response.status, 200);
 
@@ -119,6 +133,9 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 403);
 
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync-preview', { method: 'POST' });
+    assert.equal(result.response.status, 403);
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ selectedRowIds: ['psa_company_1001'] }) });
     assert.equal(result.response.status, 403);
 
     result = await request(baseUrl, '/api/v1/product-events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ eventType: 'test_event', accountId: 'acct_acme' }) });

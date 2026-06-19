@@ -11,6 +11,7 @@ const initialState = {
   generatedArtifacts: [],
   writeBackAuditEvents: [],
   activities: [],
+  syncHistory: [],
   recommendationStatus: {},
   mappingStatus: {},
   accountPlanStatus: {},
@@ -50,6 +51,7 @@ function normalizeState() {
   state.generatedArtifacts ||= [];
   state.writeBackAuditEvents ||= [];
   state.activities ||= [];
+  state.syncHistory ||= [];
   state.recommendationStatus ||= {};
   state.mappingStatus ||= {};
   state.accountPlanStatus ||= {};
