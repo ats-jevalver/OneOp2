@@ -213,6 +213,21 @@ function integrationCapabilitySummary() {
   }));
 }
 
+function integrationConfiguration(integrationConnectionId) {
+  const config = store.getState().settings.integrationConfigurations?.[integrationConnectionId] || null;
+  if (!config) return null;
+  const { clientSecret, password, apiKey, token, accessToken, refreshToken, ...safeConfig } = config;
+  return safeConfig;
+}
+
+function validateIntegrationConfigurationPatch(body) {
+  const errors = [];
+  if (body.providerType !== undefined && !['mock_psa', 'connectwise_manage', 'autotask'].includes(body.providerType)) errors.push({ code: 'validation_error', message: 'providerType must be mock_psa, connectwise_manage, or autotask.', field: 'providerType' });
+  if (body.baseUrl !== undefined && String(body.baseUrl).trim() === '') errors.push({ code: 'validation_error', message: 'baseUrl cannot be blank.', field: 'baseUrl' });
+  if (body.enabledCapabilities !== undefined && (!Array.isArray(body.enabledCapabilities) || body.enabledCapabilities.some(item => typeof item !== 'string'))) errors.push({ code: 'validation_error', message: 'enabledCapabilities must be an array of strings.', field: 'enabledCapabilities' });
+  return errors;
+}
+
 function auditWriteBack({ accountId, actionType, targetRecordType, status, requestPayload, adapterResult = {}, recommendationId = null, generatedArtifactId = null, error = null }) {
   const audit = { writeBackAuditEventId: newId('audit'), accountId, actionType, targetRecordType, status, adapter: adapterResult.adapter || 'mock', requestSummary: requestPayload ? { title: requestPayload.title, accountId: requestPayload.accountId, externalCompanyId: requestPayload.externalCompanyId } : null, responseSummary: adapterResult.requestSummary || null, error, requestPayload, externalId: adapterResult.externalId || null, externalUrl: adapterResult.externalUrl || null, recommendationId, generatedArtifactId, createdAt: now() };
   store.add('writeBackAuditEvents', audit);
@@ -353,6 +368,42 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/admin/integrations') return json(res, 200, envelope(integrations()));
+
+  if (req.method === 'GET' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'configuration') {
+    if (!requireAdmin(res)) return;
+    const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
+    if (!integration) return notFound(res, 'Integration not found.');
+    const config = integrationConfiguration(parts[4]);
+    if (!config) return notFound(res, 'Integration configuration not found.');
+    return json(res, 200, envelope(config, { secretFieldsReturned: false }));
+  }
+
+  if (req.method === 'PATCH' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'configuration') {
+    if (!requireAdmin(res)) return;
+    const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
+    if (!integration) return notFound(res, 'Integration not found.');
+    const body = await parseBody(req);
+    const errors = validateIntegrationConfigurationPatch(body);
+    if (errors.length) return json(res, 400, envelope(null, {}, errors));
+    const settings = store.getState().settings;
+    const existing = settings.integrationConfigurations?.[parts[4]] || { integrationConnectionId: parts[4] };
+    const allowedPatch = {};
+    for (const key of ['providerType', 'environmentLabel', 'baseUrl', 'tenantOrCompanyId', 'enabledCapabilities', 'secretStatus']) if (body[key] !== undefined) allowedPatch[key] = body[key];
+    settings.integrationConfigurations = { ...(settings.integrationConfigurations || {}), [parts[4]]: { ...existing, ...allowedPatch, integrationConnectionId: parts[4], updatedAt: now(), updatedByUserId: currentUser()?.userId } };
+    store.updateSettings(settings);
+    store.add('activities', { activityId: newId('activity'), accountId: null, activityType: 'integration_configuration_updated', title: `${integration.systemName} configuration updated`, body: `Updated non-secret ${integration.systemType} integration configuration.`, status: 'complete', createdByUserId: currentUser()?.userId, createdAt: now() });
+    await store.flush();
+    return json(res, 200, envelope(integrationConfiguration(parts[4]), { secretFieldsReturned: false }));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'sync-preview') {
+    if (!requireAdmin(res)) return;
+    const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
+    if (!integration) return notFound(res, 'Integration not found.');
+    if (integration.systemType !== 'psa') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Sprint 7 sync preview currently supports PSA integrations only.', field: 'integrationConnectionId' }]));
+    const preview = getPsaAdapter().previewCompanyContactSync();
+    return json(res, 200, envelope({ integrationConnectionId: parts[4], systemName: integration.systemName, ...preview }));
+  }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/integrations/status') {
     return json(res, 200, envelope({ store: store.providerInfo(), integrations: integrationCapabilitySummary() }));

@@ -22,6 +22,19 @@ const initialState = {
       defaultTaskPriority: 'Normal',
       defaultBoard: 'Account Management',
       defaultNoteType: 'Account Note'
+    },
+    integrationConfigurations: {
+      int_psa_demo: {
+        integrationConnectionId: 'int_psa_demo',
+        providerType: 'mock_psa',
+        environmentLabel: 'Sprint 7 Pilot Sandbox',
+        baseUrl: 'mock://psa',
+        tenantOrCompanyId: 'demo-tenant',
+        enabledCapabilities: ['company_sync_preview', 'contact_sync_preview', 'create_task', 'create_note'],
+        secretStatus: 'not_configured',
+        updatedAt: null,
+        updatedByUserId: null
+      }
     }
   }
 };
@@ -42,6 +55,7 @@ function normalizeState() {
   state.accountPlanStatus ||= {};
   state.settings ||= clone(initialState.settings);
   state.settings.psaFieldMapping ||= clone(initialState.settings.psaFieldMapping);
+  state.settings.integrationConfigurations ||= clone(initialState.settings.integrationConfigurations);
 }
 function providerInfo() {
   return {
