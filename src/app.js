@@ -231,7 +231,7 @@ function createAccountBrief(accountId, requestedByUserId = null) {
     `## Service Summary`, `- Open tickets: ${cc.service.summary.openTicketCount}`, `- SLA risk tickets: ${cc.service.summary.slaRiskCount}`, `- Aging tickets(): ${cc.service.summary.agingTicketCount}`, '',
     `## RMM Summary`, `- Devices: ${cc.rmm.summary.deviceCount}`, `- Patch gaps: ${cc.rmm.summary.patchGapCount}`, `- End-of-life devices(): ${cc.rmm.summary.endOfLifeDeviceCount}`, '',
     `## Security Summary`, `- Open findings: ${cc.security.summary.openFindingCount}`, `- High findings: ${cc.security.summary.highFindingCount}`, `- Coverage gaps: ${cc.security.summary.coverageGapCount}`, '',
-    `## Recommendations`, ...(cc.recommendations.length ? cc.recommendations.map(r => `- ${r.title}: ${r.reason}`) : ['- No active recommendations().']), '',
+    `## Recommendations`, ...(cc.recommendations.length ? cc.recommendations.map(r => `- ${r.title}: ${r.reason}`) : ['- No active recommendations.']), '',
     `## Evidence Appendix`, ...(evidence.length ? evidence.map(ev => `- ${ev.sourceSystemName} / ${ev.sourceRecordType} / ${ev.sourceRecordId}: ${ev.summary}`) : ['- No evidence linked.'])
   ];
   const artifact = { generatedArtifactId: newId('artifact'), accountId, artifactType: 'account_brief', title: `${cc.account.displayName} Account Brief`, bodyFormat: 'markdown', body: lines.join('\n'), status: 'draft', createdByUserId: requestedByUserId, evidenceItemIds: [...evidenceIds], createdAt: now(), updatedAt: now() };
@@ -345,6 +345,20 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/api/v1/integrations/status') {
     return json(res, 200, envelope({ store: store.providerInfo(), integrations: integrationCapabilitySummary() }));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/session/current-user') {
+    return json(res, 200, envelope(currentUser()));
+  }
+
+  if (req.method === 'PATCH' && url.pathname === '/api/v1/session/current-user') {
+    const body = await parseBody(req);
+    const user = byId(users(), 'userId', body.userId);
+    if (!user) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'userId must match a seeded active user.', field: 'userId' }]));
+    const settings = store.getState().settings;
+    store.updateSettings({ ...settings, currentUserId: user.userId });
+    await store.flush();
+    return json(res, 200, envelope(user, { localDemoOnly: true }));
   }
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'sync') {
@@ -497,6 +511,15 @@ async function handleApi(req, res, url) {
     return json(res, 200, envelope(store.providerInfo()));
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/v1/admin/database/status') {
+    if (!requireAdmin(res)) return;
+    try {
+      return json(res, 200, envelope(await dataRepository.databaseStatus(), { secretsReturned: false }));
+    } catch (error) {
+      return json(res, 503, envelope({ ...store.providerInfo(), connected: false }, {}, [{ code: 'database_unavailable', message: error.message }]));
+    }
+  }
+
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'notes' && parts[6] === 'preview') {
     if (!requireWriteBack(res)) return;
     if (!ensureAccount(res, parts[3])) return;
@@ -560,9 +583,9 @@ async function handleApi(req, res, url) {
     const cc = commandCenter(parts[3]);
     const prompt = String(body.message || '').toLowerCase();
     let message = `${cc.account.displayName}: ${cc.health.summary}`;
-    if (prompt.includes('call')) message = `Call prep: ${cc.brief.body} Top actions: ${cc.recommendations.map(r => r.title).join('; ') || 'No active recommendations().'}`;
+    if (prompt.includes('call')) message = `Call prep: ${cc.brief.body} Top actions: ${cc.recommendations.map(r => r.title).join('; ') || 'No active recommendations.'}`;
     if (prompt.includes('why')) message = `Health rationale: ${(cc.health.topDrivers || []).join('; ') || cc.health.summary}`;
-    if (prompt.includes('next')) message = `Recommended next actions: ${cc.recommendations.map(r => `${r.title} (${r.priority})`).join('; ') || 'No active recommendations().'}`;
+    if (prompt.includes('next')) message = `Recommended next actions: ${cc.recommendations.map(r => `${r.title} (${r.priority})`).join('; ') || 'No active recommendations.'}`;
     return json(res, 200, envelope({ message, evidence: evidenceForIds(cc.health.evidenceItemIds || []), suggestedActions: ['Generate Account Brief', 'Create PSA Task Stub', 'Generate QBR Draft'] }));
   }
   if (req.method === 'POST' && url.pathname === '/api/v1/product-events') {

@@ -52,6 +52,26 @@ async function initialize() {
   return activeData;
 }
 function getData() { return activeData; }
+async function databaseStatus() {
+  const tableNames = ['users','accounts','integrations','account_external_identities','account_owners','account_aliases','contacts','agreements','renewals','tickets','devices','device_health_signals','security_findings','security_coverage','evidence_items','account_health_scores','recommendations','app_settings'];
+  const status = { provider: providerName(), databaseConfigured: Boolean(process.env.ONEOP2_DATABASE_URL), connected: false, tableCounts: {}, requiredTablesPresent: false, seedValid: false };
+  if (providerName() !== 'postgres') return status;
+  const client = await getPool().connect();
+  try {
+    await client.query('select 1');
+    status.connected = true;
+    for (const table of tableNames) {
+      const result = await client.query(`select count(*)::int as count from ${table}`);
+      status.tableCounts[table] = result.rows[0].count;
+    }
+    status.requiredTablesPresent = tableNames.every(table => Object.prototype.hasOwnProperty.call(status.tableCounts, table));
+    status.seedValid = status.tableCounts.users >= 1 && status.tableCounts.accounts >= 1 && status.tableCounts.recommendations >= 1 && status.tableCounts.app_settings >= 1;
+    return status;
+  } finally {
+    client.release();
+  }
+}
 async function close() { if (pgPool) await pgPool.end(); }
 
-module.exports = { initialize, getData, close };
+module.exports = { initialize, getData, databaseStatus, close };
+

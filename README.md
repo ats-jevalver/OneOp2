@@ -196,6 +196,17 @@ Validate PostgreSQL-backed API reads after setting `ONEOP2_DATABASE_URL`:
 npm run test:postgres
 ```
 
+
+Sprint 6 foundation endpoints:
+
+```text
+GET   /api/v1/session/current-user
+PATCH /api/v1/session/current-user
+GET   /api/v1/admin/database/status
+```
+
+`PATCH /api/v1/session/current-user` is a local-demo helper for RBAC testing. Do not expose it as-is in production authentication flows. `GET /api/v1/admin/database/status` returns seed/table health without returning connection secrets.
+
 ## Sprint 6 Candidates
 
 - Activate PostgreSQL provider implementation.

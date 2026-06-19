@@ -27,6 +27,18 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data[0].accountId, 'acct_acme');
 
+    result = await request(baseUrl, '/api/v1/session/current-user', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: 'usr_admin_alex' }) });
+    assert.equal(result.response.status, 200);
+
+    result = await request(baseUrl, '/api/v1/admin/database/status');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.connected, true);
+    assert.equal(result.body.data.seedValid, true);
+    assert.ok(result.body.data.tableCounts.accounts >= 7);
+
+    result = await request(baseUrl, '/api/v1/session/current-user', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: 'usr_am_jane' }) });
+    assert.equal(result.response.status, 200);
+
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/command-center');
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.service.summary.openTicketCount, 2);
@@ -38,3 +50,4 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     server.close();
   }
 })().catch(error => { console.error(error); process.exit(1); });
+

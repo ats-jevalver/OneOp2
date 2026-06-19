@@ -80,6 +80,21 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.store.provider, 'json');
     assert.ok(result.body.data.integrations.some(i => i.capabilities.includes('create_task')));
 
+    result = await request(baseUrl, '/api/v1/session/current-user');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.userId, 'usr_am_jane');
+
+    result = await request(baseUrl, '/api/v1/session/current-user', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: 'usr_admin_alex' }) });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.role, 'admin');
+
+    result = await request(baseUrl, '/api/v1/admin/store/status');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.provider, 'json');
+
+    result = await request(baseUrl, '/api/v1/session/current-user', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: 'usr_am_jane' }) });
+    assert.equal(result.response.status, 200);
+
     result = await request(baseUrl, '/api/v1/product-events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ eventType: 'test_event', accountId: 'acct_acme' }) });
     assert.equal(result.response.status, 201);
     assert.equal(result.body.data.eventType, 'test_event');
