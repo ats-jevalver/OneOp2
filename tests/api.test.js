@@ -10,6 +10,7 @@ async function request(baseUrl, path, options = {}) { const response = await fet
   const { port } = server.address();
   const baseUrl = `http://127.0.0.1:${port}`;
   try {
+    await request(baseUrl, '/api/v1/admin/store/reset', { method: 'POST' });
     let result = await request(baseUrl, '/api/v1/accounts/search?query=acme&page=1&pageSize=10');
     assert.equal(result.response.status, 200);
     assert.ok(result.body.data.some(a => a.accountId === 'acct_acme'));
@@ -128,7 +129,39 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.matchStatus, 'confirmed');
 
-    console.log('All Sprint 3 API smoke tests passed.');
+        result = await request(baseUrl, '/api/v1/integrations/psa/status');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.adapter, 'mock');
+
+    result = await request(baseUrl, '/api/v1/admin/settings/psa-field-mapping');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.defaultTaskType);
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/qbr-draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
+    assert.equal(result.response.status, 201);
+    assert.equal(result.body.data.artifactType, 'qbr_draft');
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/customer-email-draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_security_email' }) });
+    assert.equal(result.response.status, 201);
+    assert.equal(result.body.data.artifactType, 'customer_email_draft');
+
+    const brief = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/account-brief', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
+    const notePreview = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId }) });
+    assert.equal(notePreview.response.status, 200);
+    const noteCreate = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId, confirmed: true }) });
+    assert.equal(noteCreate.response.status, 201);
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/assistant/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'Prepare me for my call' }) });
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.message.includes('Call prep'));
+
+    result = await request(baseUrl, '/api/v1/portfolio/renewals?days=90&ownerUserId=usr_am_jane');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.every(row => row.owner.userId === 'usr_am_jane'));
+
+    console.log('All Sprint 4 API smoke tests passed.');
   } finally { server.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
+
+
 

@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const data = require('./data');
+const store = require('./repositories/store');
+const { getPsaAdapter } = require('./integrations/psaAdapter');
+store.ensureStore();
 const {
   users, integrations, accounts, accountOwners, aliases, externalIdentities, contacts, agreements, renewals,
   tickets, devices, deviceHealthSignals, securityFindings, securityCoverage, evidenceItems, accountHealthScores,
@@ -12,6 +15,9 @@ function envelope(data, meta = {}, errors = []) {
 }
 
 function byId(list, key, value) { return list.find(item => item[key] === value) || null; }
+function currentUser() { return byId(users, 'userId', store.getState().settings.currentUserId) || byId(users, 'userId', 'usr_am_jane'); }
+function canWriteBack() { return ['admin','account_manager','sales_rep','service_manager','security_lead','executive'].includes(currentUser()?.role); }
+function canAdmin() { return currentUser()?.role === 'admin'; }
 function forAccount(list, accountId) { return list.filter(item => item.accountId === accountId); }
 
 function findOwner(accountId) {
@@ -32,7 +38,7 @@ function primaryContact(accountId) {
 
 function accountWarnings(accountId) {
   const warnings = [];
-  const needsReview = externalIdentities.filter(e => e.accountId === accountId && e.matchStatus === 'needs_review');
+  const needsReview = externalIdentities.filter(e => e.accountId === accountId && (store.getMappingStatus(e.accountExternalIdentityId)?.matchStatus || e.matchStatus) === 'needs_review');
   for (const item of needsReview) warnings.push({ type: 'mapping_review', message: `${item.sourceSystemName} identity "${item.externalDisplayName}" needs mapping review.` });
   if (accountId === 'acct_harbor') warnings.push({ type: 'data_stale', message: 'Microsoft 365/security data is stale. Last successful sync was 2026-06-09.' });
   return warnings;
@@ -54,10 +60,12 @@ function latestHealth(accountId) {
 }
 
 function recommendationDto(rec) {
+  const overlay = store.getRecommendationStatus(rec.recommendationId) || {};
+  const merged = { ...rec, ...overlay };
   return {
-    ...rec,
-    suggestedOwner: userSummary(rec.suggestedOwnerUserId),
-    evidenceCount: rec.evidenceItemIds.length,
+    ...merged,
+    suggestedOwner: userSummary(merged.suggestedOwnerUserId),
+    evidenceCount: merged.evidenceItemIds.length,
     availableActions: ['view_evidence', 'create_psa_task_coming_soon', 'dismiss_coming_soon']
   };
 }
@@ -175,15 +183,16 @@ function createAccountBrief(accountId, requestedByUserId = null) {
     `## Evidence Appendix`, ...(evidence.length ? evidence.map(ev => `- ${ev.sourceSystemName} / ${ev.sourceRecordType} / ${ev.sourceRecordId}: ${ev.summary}`) : ['- No evidence linked.'])
   ];
   const artifact = { generatedArtifactId: newId('artifact'), accountId, artifactType: 'account_brief', title: `${cc.account.displayName} Account Brief`, bodyFormat: 'markdown', body: lines.join('\n'), status: 'draft', createdByUserId: requestedByUserId, evidenceItemIds: [...evidenceIds], createdAt: now(), updatedAt: now() };
-  generatedArtifacts.push(artifact);
-  activities.push({ activityId: newId('activity'), accountId, activityType: 'generated_artifact', title: artifact.title, body: 'Generated account brief.', status: 'complete', generatedArtifactId: artifact.generatedArtifactId, createdAt: artifact.createdAt });
+  store.add('generatedArtifacts', artifact);
+  store.add('activities', { activityId: newId('activity'), accountId, activityType: 'generated_artifact', title: artifact.title, body: 'Generated account brief.', status: 'complete', generatedArtifactId: artifact.generatedArtifactId, createdAt: artifact.createdAt });
   return artifact;
 }
 
 function activityTimeline(accountId) {
-  const artifactItems = generatedArtifacts.filter(a => a.accountId === accountId).map(a => ({ type: 'generated_artifact', timestamp: a.createdAt, title: a.title, generatedArtifactId: a.generatedArtifactId, status: a.status }));
-  const auditItems = writeBackAuditEvents.filter(e => e.accountId === accountId).map(e => ({ type: 'write_back_audit', timestamp: e.createdAt, title: `${e.actionType} ${e.status}`, writeBackAuditEventId: e.writeBackAuditEventId, externalId: e.externalId, recommendationId: e.recommendationId }));
-  return [...artifactItems, ...auditItems, ...activities.filter(a => a.accountId === accountId)].sort((a, b) => String(b.timestamp || b.createdAt).localeCompare(String(a.timestamp || a.createdAt)));
+  const artifactItems = store.list('generatedArtifacts', a => a.accountId === accountId).map(a => ({ type: 'generated_artifact', timestamp: a.createdAt, title: a.title, generatedArtifactId: a.generatedArtifactId, status: a.status }));
+  const auditItems = store.list('writeBackAuditEvents', e => e.accountId === accountId).map(e => ({ type: 'write_back_audit', timestamp: e.createdAt, title: `${e.actionType} ${e.status}`, writeBackAuditEventId: e.writeBackAuditEventId, externalId: e.externalId, recommendationId: e.recommendationId }));
+  const runtimeActivities = store.list('activities', a => a.accountId === accountId);
+  return [...artifactItems, ...auditItems, ...runtimeActivities].sort((a, b) => String(b.timestamp || b.createdAt).localeCompare(String(a.timestamp || a.createdAt)));
 }
 
 function portfolioRow(account) {
@@ -276,7 +285,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/api/v1/admin/account-mapping/suggestions') {
     const matchStatus = url.searchParams.get('matchStatus') || 'needs_review';
-    const rows = externalIdentities.filter(e => e.matchStatus === matchStatus).map(e => ({ ...e, account: accountSummary(byId(accounts, 'accountId', e.accountId)) }));
+    const rows = externalIdentities.map(e => ({ ...e, ...(store.getMappingStatus(e.accountExternalIdentityId) || {}) })).filter(e => e.matchStatus === matchStatus).map(e => ({ ...e, account: accountSummary(byId(accounts, 'accountId', e.accountId)) }));
     return json(res, 200, envelope(rows));
   }
 
@@ -307,17 +316,18 @@ async function handleApi(req, res, url) {
     if (preview.error) return json(res, 400, envelope(null, {}, [preview.error]));
     const externalId = newId('stub_psa_task');
     const activity = { activityId: newId('activity'), accountId: parts[3], activityType: 'psa_task_stub', title: preview.payload.title, body: preview.payload.body, status: 'open', dueDate: preview.payload.dueDate, ownerUserId: preview.payload.ownerUserId, recommendationId: preview.payload.recommendationId, externalId, externalUrl: `stub://psa/tasks/${externalId}`, createdAt: now() };
-    activities.push(activity);
-    const rec = byId(recommendations, 'recommendationId', preview.payload.recommendationId);
-    if (rec) rec.status = 'converted_to_task';
-    const audit = { writeBackAuditEventId: newId('audit'), accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'succeeded', requestPayload: preview.payload, externalId, externalUrl: activity.externalUrl, recommendationId: preview.payload.recommendationId, createdAt: now() };
-    writeBackAuditEvents.push(audit);
-    return json(res, 201, envelope({ activityId: activity.activityId, externalId, externalUrl: activity.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId }));
+    const adapterResult = getPsaAdapter().createTask(preview.payload);
+    activity.externalId = adapterResult.externalId; activity.externalUrl = adapterResult.externalUrl;
+    store.add('activities', activity);
+    store.setRecommendationStatus(preview.payload.recommendationId, { status: 'converted_to_task', updatedAt: now() });
+    const audit = { writeBackAuditEventId: newId('audit'), accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'succeeded', requestPayload: preview.payload, externalId: adapterResult.externalId, externalUrl: adapterResult.externalUrl, recommendationId: preview.payload.recommendationId, createdAt: now() };
+    store.add('writeBackAuditEvents', audit);
+    return json(res, 201, envelope({ activityId: activity.activityId, externalId: audit.externalId, externalUrl: audit.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId }));
   }
 
   if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'write-back-audit-events') {
     if (!ensureAccount(res, parts[3])) return;
-    return json(res, 200, envelope(writeBackAuditEvents.filter(e => e.accountId === parts[3])));
+    return json(res, 200, envelope(store.list('writeBackAuditEvents', e => e.accountId === parts[3])));
   }
 
   if (req.method === 'PATCH' && parts[2] === 'recommendations') {
@@ -326,10 +336,7 @@ async function handleApi(req, res, url) {
     const body = await parseBody(req);
     const allowed = ['new', 'accepted', 'dismissed', 'snoozed', 'converted_to_task', 'converted_to_opportunity', 'completed'];
     if (!allowed.includes(body.status)) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Invalid recommendation status.', field: 'status' }]));
-    rec.status = body.status;
-    if (body.dismissalReason) rec.dismissalReason = body.dismissalReason;
-    if (body.snoozedUntil) rec.snoozedUntil = body.snoozedUntil;
-    rec.updatedAt = now();
+    store.setRecommendationStatus(rec.recommendationId, { status: body.status, dismissalReason: body.dismissalReason, snoozedUntil: body.snoozedUntil, updatedAt: now() });
     return json(res, 200, envelope(recommendationDto(rec)));
   }
 
@@ -340,7 +347,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && parts[2] === 'generated-artifacts' && parts.length === 4) {
-    const artifact = byId(generatedArtifacts, 'generatedArtifactId', parts[3]);
+    const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
     if (!artifact) return notFound(res, 'Generated artifact not found.');
     return json(res, 200, envelope(artifact));
   }
@@ -348,13 +355,13 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'generated-artifacts') {
     if (!ensureAccount(res, parts[3])) return;
     const artifactType = url.searchParams.get('artifactType');
-    let rows = generatedArtifacts.filter(a => a.accountId === parts[3]);
+    let rows = store.list('generatedArtifacts', a => a.accountId === parts[3]);
     if (artifactType) rows = rows.filter(a => a.artifactType === artifactType);
     return json(res, 200, envelope(rows));
   }
 
   if (req.method === 'GET' && parts[2] === 'generated-artifacts' && parts[4] === 'evidence') {
-    const artifact = byId(generatedArtifacts, 'generatedArtifactId', parts[3]);
+    const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
     if (!artifact) return notFound(res, 'Generated artifact not found.');
     return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, evidence: evidenceForIds(artifact.evidenceItemIds || []) }));
   }
@@ -367,28 +374,104 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'confirm') {
     const identity = byId(externalIdentities, 'accountExternalIdentityId', parts[4]);
     if (!identity) return notFound(res, 'Account external identity not found.');
-    identity.matchStatus = 'confirmed'; identity.matchConfidence = 100; identity.matchedAt = now(); identity.matchedBy = 'runtime_admin';
-    return json(res, 200, envelope(identity));
+    const overlay = store.setMappingStatus(identity.accountExternalIdentityId, { matchStatus: 'confirmed', matchConfidence: 100, matchedAt: now(), matchedBy: 'runtime_admin' });
+    return json(res, 200, envelope({ ...identity, ...overlay }));
   }
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'reject') {
     const identity = byId(externalIdentities, 'accountExternalIdentityId', parts[4]);
     if (!identity) return notFound(res, 'Account external identity not found.');
-    identity.matchStatus = 'rejected'; identity.matchedAt = now(); identity.matchedBy = 'runtime_admin';
-    return json(res, 200, envelope(identity));
+    const overlay = store.setMappingStatus(identity.accountExternalIdentityId, { matchStatus: 'rejected', matchedAt: now(), matchedBy: 'runtime_admin' });
+    return json(res, 200, envelope({ ...identity, ...overlay }));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/accounts-at-risk') {
-    return json(res, 200, envelope(accounts.filter(a => latestHealth(a.accountId).scoreCategory === 'at_risk').map(portfolioRow)));
+    const owner = url.searchParams.get('ownerUserId');
+    let rows = accounts.filter(a => latestHealth(a.accountId).scoreCategory === 'at_risk').map(portfolioRow);
+    if (owner) rows = rows.filter(r => r.owner?.userId === owner);
+    return json(res, 200, envelope(rows));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/renewals') {
     const days = Number(url.searchParams.get('days') || 90);
-    return json(res, 200, envelope(accounts.filter(a => { const h = latestHealth(a.accountId); const r = renewals.find(x => x.accountId === a.accountId); return h.scoreCategory === 'renewal_risk' || (r && r.daysUntilRenewal <= days); }).map(portfolioRow)));
+    const owner = url.searchParams.get('ownerUserId');
+    let rows = accounts.filter(a => { const h = latestHealth(a.accountId); const r = renewals.find(x => x.accountId === a.accountId); return h.scoreCategory === 'renewal_risk' || (r && r.daysUntilRenewal <= days); }).map(portfolioRow);
+    if (owner) rows = rows.filter(r => r.owner?.userId === owner);
+    return json(res, 200, envelope(rows));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/expansion-candidates') {
-    return json(res, 200, envelope(accounts.filter(a => latestHealth(a.accountId).scoreCategory === 'expansion_candidate' || recommendations.some(r => r.accountId === a.accountId && r.recommendationType === 'open_opportunity')).map(portfolioRow)));
+    const owner = url.searchParams.get('ownerUserId');
+    let rows = accounts.filter(a => latestHealth(a.accountId).scoreCategory === 'expansion_candidate' || recommendations.some(r => r.accountId === a.accountId && r.recommendationType === 'open_opportunity')).map(portfolioRow);
+    if (owner) rows = rows.filter(r => r.owner?.userId === owner);
+    return json(res, 200, envelope(rows));
+  }
+  if (req.method === 'GET' && url.pathname === '/api/v1/admin/settings/psa-field-mapping') {
+    return json(res, 200, envelope(store.getState().settings.psaFieldMapping));
+  }
+
+  if (req.method === 'PATCH' && url.pathname === '/api/v1/admin/settings/psa-field-mapping') {
+    const body = await parseBody(req);
+    const settings = store.getState().settings;
+    settings.psaFieldMapping = { ...settings.psaFieldMapping, ...body };
+    store.updateSettings(settings);
+    return json(res, 200, envelope(settings.psaFieldMapping));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/v1/admin/store/reset') {
+    store.resetStore();
+    return json(res, 200, envelope({ status: 'reset', storePath: store.storePath }));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/integrations/psa/status') {
+    return json(res, 200, envelope(getPsaAdapter().getConnectionStatus()));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'notes' && parts[6] === 'preview') {
+    if (!ensureAccount(res, parts[3])) return;
+    const body = await parseBody(req);
+    const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === body.generatedArtifactId && a.accountId === parts[3]);
+    if (!artifact) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'generatedArtifactId is required for this account.', field: 'generatedArtifactId' }]));
+    return json(res, 200, envelope({ isValid: true, payload: { accountId: parts[3], generatedArtifactId: artifact.generatedArtifactId, title: artifact.title, body: artifact.body, noteType: store.getState().settings.psaFieldMapping.defaultNoteType, isStub: true }, warnings: ['Sprint 4 uses mock PSA note creation.'] }));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'notes' && !parts[6]) {
+    if (!ensureAccount(res, parts[3])) return;
+    const body = await parseBody(req);
+    if (body.confirmed !== true) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'confirmed must be true before creating a PSA note.', field: 'confirmed' }]));
+    const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === body.generatedArtifactId && a.accountId === parts[3]);
+    if (!artifact) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'generatedArtifactId is required for this account.', field: 'generatedArtifactId' }]));
+    const adapterResult = getPsaAdapter().createNote({ accountId: parts[3], title: artifact.title, body: artifact.body, generatedArtifactId: artifact.generatedArtifactId });
+    const audit = { writeBackAuditEventId: newId('audit'), accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'succeeded', externalId: adapterResult.externalId, externalUrl: adapterResult.externalUrl, generatedArtifactId: artifact.generatedArtifactId, createdAt: now() };
+    store.add('writeBackAuditEvents', audit);
+    return json(res, 201, envelope({ externalId: adapterResult.externalId, externalUrl: adapterResult.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId }));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'artifacts' && ['qbr-draft','customer-email-draft'].includes(parts[5])) {
+    if (!ensureAccount(res, parts[3])) return;
+    const cc = commandCenter(parts[3]);
+    const isQbr = parts[5] === 'qbr-draft';
+    const title = isQbr ? `${cc.account.displayName} QBR Draft` : `${cc.account.displayName} Customer Email Draft`;
+    const body = isQbr
+      ? `# ${title}\n\n## Executive Summary\n${cc.brief.body}\n\n## Service\nOpen tickets: ${cc.service.summary.openTicketCount}\n\n## RMM\nPatch gaps: ${cc.rmm.summary.patchGapCount}\n\n## Security\nOpen findings: ${cc.security.summary.openFindingCount}\n\n## Next Steps\n${cc.recommendations.map(r => `- ${r.title}`).join('\n')}`
+      : `Subject: Recommended next steps for ${cc.account.displayName}\n\nHi,\n\nBased on our recent account review, I recommend we discuss: ${cc.recommendations[0]?.title || 'your current technology roadmap'}.\n\n${cc.recommendations[0]?.reason || cc.health.summary}\n\nBest,`;
+    const evidenceIds = [...new Set([...(cc.health.evidenceItemIds || []), ...cc.recommendations.flatMap(r => r.evidenceItemIds || [])])];
+    const artifact = { generatedArtifactId: newId('artifact'), accountId: parts[3], artifactType: isQbr ? 'qbr_draft' : 'customer_email_draft', title, bodyFormat: 'markdown', body, status: 'draft', evidenceItemIds: evidenceIds, createdAt: now(), updatedAt: now() };
+    store.add('generatedArtifacts', artifact);
+    store.add('activities', { activityId: newId('activity'), accountId: parts[3], activityType: 'generated_artifact', title: artifact.title, status: 'complete', generatedArtifactId: artifact.generatedArtifactId, createdAt: artifact.createdAt });
+    return json(res, 201, envelope(artifact));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'assistant' && parts[5] === 'ask') {
+    if (!ensureAccount(res, parts[3])) return;
+    const body = await parseBody(req);
+    const cc = commandCenter(parts[3]);
+    const prompt = String(body.message || '').toLowerCase();
+    let message = `${cc.account.displayName}: ${cc.health.summary}`;
+    if (prompt.includes('call')) message = `Call prep: ${cc.brief.body} Top actions: ${cc.recommendations.map(r => r.title).join('; ') || 'No active recommendations.'}`;
+    if (prompt.includes('why')) message = `Health rationale: ${(cc.health.topDrivers || []).join('; ') || cc.health.summary}`;
+    if (prompt.includes('next')) message = `Recommended next actions: ${cc.recommendations.map(r => `${r.title} (${r.priority})`).join('; ') || 'No active recommendations.'}`;
+    return json(res, 200, envelope({ message, evidence: evidenceForIds(cc.health.evidenceItemIds || []), suggestedActions: ['Generate Account Brief', 'Create PSA Task Stub', 'Generate QBR Draft'] }));
   }
   if (req.method === 'POST' && url.pathname === '/api/v1/product-events') {
     const body = await parseBody(req);
@@ -426,6 +509,11 @@ function createHandler() {
 }
 
 module.exports = { createHandler, searchAccounts, commandCenter, revenue, summarizeService, summarizeRmm, summarizeSecurity, latestHealth, envelope };
+
+
+
+
+
 
 
 

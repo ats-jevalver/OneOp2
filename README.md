@@ -6,7 +6,9 @@ Sprint 1 delivered the first visible product slice: search/select an account and
 
 Sprint 2 added the first account intelligence loop: seeded service, RMM, and security signals; explainable health scores; evidence-backed recommendations; and an evidence modal.
 
-Sprint 3 makes the intelligence actionable with stubbed PSA task creation, write-back audit history, generated account briefs, activity timeline, mapping admin actions, and portfolio views.
+Sprint 3 made the intelligence actionable with stubbed PSA task creation, write-back audit history, generated account briefs, activity timeline, mapping admin actions, and portfolio views.
+
+Sprint 4 adds durable local JSON persistence, a repository-style store boundary, a mock PSA adapter, persisted runtime workflow state, PSA note stubs, QBR/email artifacts, portfolio filters, and deterministic assistant prompts.
 
 ## Current Features
 
@@ -29,6 +31,10 @@ Sprint 3 makes the intelligence actionable with stubbed PSA task creation, write
 - Account brief generation endpoint.
 - Generated artifact list/retrieve/evidence endpoints.
 - Portfolio At Risk, Renewal Risk, and Expansion Candidate endpoints.
+- Durable local JSON persistence for generated artifacts, audits, activities, recommendation statuses, and mapping decisions.
+- Mock PSA adapter for task and note stubs.
+- QBR draft and customer email draft artifact endpoints.
+- Assistant prompt endpoint for call prep, risk rationale, and next actions.
 - Integration list and sync stub endpoint.
 - Product event tracking endpoint.
 - API smoke tests.
@@ -67,7 +73,7 @@ npm test
 Expected result:
 
 ```text
-All Sprint 3 API smoke tests passed.
+All Sprint 4 API smoke tests passed.
 ```
 
 ## Demo searches
@@ -107,6 +113,15 @@ GET  /api/v1/generated-artifacts/:generatedArtifactId/evidence
 GET  /api/v1/portfolio/accounts-at-risk
 GET  /api/v1/portfolio/renewals?days=90
 GET  /api/v1/portfolio/expansion-candidates
+GET  /api/v1/integrations/psa/status
+GET  /api/v1/admin/settings/psa-field-mapping
+PATCH /api/v1/admin/settings/psa-field-mapping
+POST /api/v1/admin/store/reset
+POST /api/v1/accounts/:accountId/psa/notes/preview
+POST /api/v1/accounts/:accountId/psa/notes
+POST /api/v1/accounts/:accountId/artifacts/qbr-draft
+POST /api/v1/accounts/:accountId/artifacts/customer-email-draft
+POST /api/v1/accounts/:accountId/assistant/ask
 GET  /api/v1/admin/integrations
 POST /api/v1/admin/integrations/:integrationConnectionId/sync
 POST /api/v1/product-events
@@ -121,14 +136,40 @@ src/       Seed data, API handlers, server
 tests/     API contract smoke tests
 ```
 
-## Sprint 4 Candidates
+## Persistence
 
-- Add lightweight database persistence.
-- Real PSA write-back integration using configured field mapping.
-- PSA note creation from generated account brief.
-- Real PSA ticket/company/contact sync.
-- Generated QBR draft.
-- Customer email draft generation.
-- Buffaly assistant panel with suggested prompts.
-- Portfolio filters by owner/date range.
-- Authentication/RBAC hardening.
+Sprint 4 uses a lightweight local JSON store at:
+
+```text
+src/../data-store/oneop2-store.json
+```
+
+The store is intentionally ignored by Git. It persists generated artifacts, write-back audit events, activity timeline entries, recommendation status overlays, mapping decisions, and settings between app restarts.
+
+Reset local demo state:
+
+```bash
+ONEOP2_RESET_STORE=1 npm start
+```
+
+Or call:
+
+```text
+POST /api/v1/admin/store/reset
+```
+
+## Sprint 5 Candidates
+
+- PostgreSQL migration.
+- Real PSA write-back for task and note creation.
+- Real PSA company/contact/ticket sync hardening.
+- Real RMM read integration spike.
+- Real Microsoft 365/security read integration spike.
+- QBR export to PDF or PowerPoint.
+- Customer email prepare/send handoff.
+- Buffaly assistant with conversational memory.
+- Account plan editor.
+- Relationship/contact engagement model.
+- Deployment packaging.
+- Production authentication.
+- Multi-tenant architecture design.
