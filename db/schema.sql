@@ -303,6 +303,46 @@ create table if not exists activities (
 
 create index if not exists idx_activities_account_created on activities(account_id, created_at desc);
 
+
+create table if not exists account_plans (
+  account_plan_id text primary key,
+  account_id text not null references accounts(account_id),
+  plan_name text not null,
+  status text not null,
+  plan_summary text,
+  owner_user_id text references users(user_id),
+  target_review_date date,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_account_plans_account on account_plans(account_id);
+
+create table if not exists account_plan_objectives (
+  account_plan_objective_id text primary key,
+  account_plan_id text not null references account_plans(account_plan_id) on delete cascade,
+  title text not null,
+  objective_type text not null,
+  status text not null,
+  priority text not null,
+  target_date date,
+  success_metric text,
+  linked_recommendation_id text
+);
+
+create index if not exists idx_account_plan_objectives_plan on account_plan_objectives(account_plan_id);
+
+create table if not exists account_plan_stakeholders (
+  account_plan_stakeholder_id text primary key,
+  account_plan_id text not null references account_plans(account_plan_id) on delete cascade,
+  contact_id text references contacts(contact_id),
+  stakeholder_role text not null,
+  relationship_strength text,
+  sentiment text,
+  notes text
+);
+
+create index if not exists idx_account_plan_stakeholders_plan on account_plan_stakeholders(account_plan_id);
+
 create table if not exists app_settings (
   setting_key text primary key,
   setting_value jsonb not null,

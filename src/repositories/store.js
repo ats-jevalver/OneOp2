@@ -13,6 +13,7 @@ const initialState = {
   activities: [],
   recommendationStatus: {},
   mappingStatus: {},
+  accountPlanStatus: {},
   settings: {
     currentUserId: 'usr_am_jane',
     psaFieldMapping: {
@@ -38,6 +39,7 @@ function normalizeState() {
   state.activities ||= [];
   state.recommendationStatus ||= {};
   state.mappingStatus ||= {};
+  state.accountPlanStatus ||= {};
   state.settings ||= clone(initialState.settings);
   state.settings.psaFieldMapping ||= clone(initialState.settings.psaFieldMapping);
 }
@@ -138,3 +140,4 @@ function updateSettings(patch) { getState().settings = { ...getState().settings,
 async function close() { await flush(); if (pgPool) await pgPool.end(); }
 
 module.exports = { storePath, providerName, providerInfo, ensureStore, getState, resetStore, add, list, find, flush, close, setRecommendationStatus, getRecommendationStatus, setMappingStatus, getMappingStatus, updateSettings };
+

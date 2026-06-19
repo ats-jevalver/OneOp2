@@ -144,6 +144,21 @@ async function main() {
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,now(),now())
     `, r => [r.recommendationId, r.accountId, r.recommendationType, r.title, r.reason, r.priority, r.status, r.suggestedOwnerUserId, r.suggestedDueDate, asJson(r.evidenceItemIds || [])]);
 
+    await insertMany(client, data.accountPlans || [], `
+      insert into account_plans (account_plan_id, account_id, plan_name, status, plan_summary, owner_user_id, target_review_date, updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8)
+    `, p => [p.accountPlanId, p.accountId, p.planName, p.status, p.planSummary, p.ownerUserId, p.targetReviewDate, toDate(p.updatedAt)]);
+
+    await insertMany(client, data.accountPlanObjectives || [], `
+      insert into account_plan_objectives (account_plan_objective_id, account_plan_id, title, objective_type, status, priority, target_date, success_metric, linked_recommendation_id)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `, o => [o.accountPlanObjectiveId, o.accountPlanId, o.title, o.objectiveType, o.status, o.priority, o.targetDate, o.successMetric, o.linkedRecommendationId]);
+
+    await insertMany(client, data.accountPlanStakeholders || [], `
+      insert into account_plan_stakeholders (account_plan_stakeholder_id, account_plan_id, contact_id, stakeholder_role, relationship_strength, sentiment, notes)
+      values ($1,$2,$3,$4,$5,$6,$7)
+    `, s => [s.accountPlanStakeholderId, s.accountPlanId, s.contactId, s.stakeholderRole, s.relationshipStrength, s.sentiment, s.notes]);
+
     await client.query(`
       insert into app_settings (setting_key, setting_value, updated_at)
       values ($1, $2::jsonb, now())
@@ -151,7 +166,7 @@ async function main() {
 
     await client.query('commit');
 
-    const tables = ['users','accounts','integrations','account_external_identities','account_owners','account_aliases','contacts','agreements','renewals','tickets','devices','device_health_signals','security_findings','security_coverage','evidence_items','account_health_scores','recommendations','app_settings'];
+    const tables = ['users','accounts','integrations','account_external_identities','account_owners','account_aliases','contacts','agreements','renewals','tickets','devices','device_health_signals','security_findings','security_coverage','evidence_items','account_health_scores','recommendations','account_plans','account_plan_objectives','account_plan_stakeholders','app_settings'];
     const counts = {};
     for (const table of tables) {
       const result = await pool.query(`select count(*)::int as count from ${table}`);

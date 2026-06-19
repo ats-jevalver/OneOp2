@@ -45,6 +45,11 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.rmm.summary.patchGapCount, 2);
     assert.equal(result.body.data.security.summary.highFindingCount, 1);
 
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/account-plan');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.accountPlanId, 'plan_acme_2026');
+    assert.ok(result.body.data.stakeholders.length >= 2);
+
     console.log('PostgreSQL API read smoke test passed.');
   } finally {
     server.close();

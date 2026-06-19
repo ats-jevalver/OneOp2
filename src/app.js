@@ -23,6 +23,9 @@ function securityCoverage() { return data().securityCoverage; }
 function evidenceItems() { return data().evidenceItems; }
 function accountHealthScores() { return data().accountHealthScores; }
 function recommendations() { return data().recommendations; }
+function accountPlans() { return data().accountPlans || []; }
+function accountPlanObjectives() { return data().accountPlanObjectives || []; }
+function accountPlanStakeholders() { return data().accountPlanStakeholders || []; }
 
 function envelope(data, meta = {}, errors = []) {
   return { data, meta: { requestId: `req_${Date.now()}`, timestamp: new Date().toISOString(), ...meta }, errors };
@@ -254,6 +257,14 @@ function portfolioRow(account) {
   return { accountId: account.accountId, displayName: account.displayName, owner: findOwner(account.accountId), healthCategory: health.scoreCategory, reason: health.summary, renewal, recommendedAction: topRecommendation?.title || null, recommendationId: topRecommendation?.recommendationId || null };
 }
 
+function accountPlanDto(accountId) {
+  const plan = accountPlans().find(p => p.accountId === accountId) || null;
+  if (!plan) return null;
+  const objectives = accountPlanObjectives().filter(o => o.accountPlanId === plan.accountPlanId).map(o => ({ ...o, linkedRecommendation: o.linkedRecommendationId ? recommendationDto(byId(recommendations(), 'recommendationId', o.linkedRecommendationId)) : null }));
+  const stakeholders = accountPlanStakeholders().filter(s => s.accountPlanId === plan.accountPlanId).map(s => ({ ...s, contact: byId(contacts(), 'contactId', s.contactId) }));
+  return { ...plan, owner: userSummary(plan.ownerUserId), objectives, stakeholders };
+}
+
 function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(body, null, 2));
@@ -444,6 +455,27 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'activity') {
     if (!ensureAccount(res, parts[3])) return;
     return json(res, 200, envelope({ items: activityTimeline(parts[3]) }));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'account-plan') {
+    if (!ensureAccount(res, parts[3])) return;
+    const plan = accountPlanDto(parts[3]);
+    if (!plan) return notFound(res, 'Account plan not found.');
+    const overlay = store.getState().accountPlanStatus?.[plan.accountPlanId] || {};
+    return json(res, 200, envelope({ ...plan, ...overlay }));
+  }
+
+  if (req.method === 'PATCH' && parts[2] === 'accounts' && parts[4] === 'account-plan') {
+    if (!ensureAccount(res, parts[3])) return;
+    const plan = accountPlanDto(parts[3]);
+    if (!plan) return notFound(res, 'Account plan not found.');
+    const body = await parseBody(req);
+    const allowed = ['planSummary', 'status', 'targetReviewDate'];
+    const patch = Object.fromEntries(Object.entries(body).filter(([key]) => allowed.includes(key)));
+    store.getState().accountPlanStatus ||= {};
+    store.getState().accountPlanStatus[plan.accountPlanId] = { ...(store.getState().accountPlanStatus[plan.accountPlanId] || {}), ...patch, updatedAt: now() };
+    await store.flush();
+    return json(res, 200, envelope({ ...plan, ...store.getState().accountPlanStatus[plan.accountPlanId] }));
   }
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'confirm') {

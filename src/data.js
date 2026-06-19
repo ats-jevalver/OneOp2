@@ -137,6 +137,20 @@ const recommendations = [
   { recommendationId: 'rec_summit_security_opp', accountId: 'acct_summit', recommendationType: 'open_opportunity', title: 'Open security services expansion opportunity', reason: 'Summit is stable but lacks MDR coverage in the current account posture.', priority: 'medium', status: 'new', suggestedOwnerUserId: 'usr_sales_marcus', suggestedDueDate: '2026-07-01', confidence: 'medium', evidenceItemIds: ['ev_summit_mdr_gap'] }
 ];
 
+const accountPlans = [
+  { accountPlanId: 'plan_acme_2026', accountId: 'acct_acme', planName: 'Acme 2026 Account Plan', status: 'active', planSummary: 'Protect renewal, reduce operational risk, and align security improvements before the August renewal.', ownerUserId: 'usr_am_jane', targetReviewDate: '2026-07-15', updatedAt: '2026-06-19T12:00:00Z' }
+];
+
+const accountPlanObjectives = [
+  { accountPlanObjectiveId: 'obj_acme_renewal', accountPlanId: 'plan_acme_2026', title: 'Secure renewal commitment', objectiveType: 'renewal', status: 'in_progress', priority: 'high', targetDate: '2026-08-01', successMetric: 'Renewal signed before 2026-08-24', linkedRecommendationId: 'rec_acme_qbr' },
+  { accountPlanObjectiveId: 'obj_acme_security', accountPlanId: 'plan_acme_2026', title: 'Close administrative MFA gap', objectiveType: 'risk_reduction', status: 'planned', priority: 'high', targetDate: '2026-07-10', successMetric: 'MFA enforced for all administrative users', linkedRecommendationId: 'rec_acme_security_email' },
+  { accountPlanObjectiveId: 'obj_acme_patch', accountPlanId: 'plan_acme_2026', title: 'Remediate legacy workstation patch gap', objectiveType: 'service_health', status: 'planned', priority: 'medium', targetDate: '2026-07-05', successMetric: 'Critical patch gap cleared or device replaced', linkedRecommendationId: null }
+];
+
+const accountPlanStakeholders = [
+  { accountPlanStakeholderId: 'stake_acme_tina', accountPlanId: 'plan_acme_2026', contactId: 'contact_acme_tina', stakeholderRole: 'economic_buyer', relationshipStrength: 'strong', sentiment: 'neutral_positive', notes: 'Primary renewal sponsor; wants concise business-risk framing.' },
+  { accountPlanStakeholderId: 'stake_acme_omar', accountPlanId: 'plan_acme_2026', contactId: 'contact_acme_omar', stakeholderRole: 'technical_champion', relationshipStrength: 'medium', sentiment: 'concerned', notes: 'Owns remediation details for MFA and workstation patch gap.' }
+];
 const generatedArtifacts = [];
 const writeBackAuditEvents = [];
 const activities = [];
@@ -160,6 +174,9 @@ module.exports = {
   evidenceItems,
   accountHealthScores,
   recommendations,
+  accountPlans,
+  accountPlanObjectives,
+  accountPlanStakeholders,
   generatedArtifacts,
   writeBackAuditEvents,
   activities,

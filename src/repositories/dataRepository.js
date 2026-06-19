@@ -38,8 +38,11 @@ async function loadPostgresData() {
     const evidenceItems = (await query(client, 'select * from evidence_items order by evidence_item_id')).map(e => ({ evidenceItemId: e.evidence_item_id, accountId: e.account_id, sourceSystemName: e.source_system_name, sourceRecordType: e.source_record_type, sourceRecordId: e.source_record_id, evidenceType: e.source_record_type, summary: e.summary, severity: null, observedAt: toIso(e.observed_at) }));
     const accountHealthScores = (await query(client, 'select * from account_health_scores order by account_health_score_id')).map(h => ({ accountHealthScoreId: h.account_health_score_id, accountId: h.account_id, scoreCategory: h.score_category, scoreValue: h.score_value, summary: h.summary, confidence: h.confidence, calculatedAt: toIso(h.calculated_at), topDrivers: h.top_drivers || [], evidenceItemIds: h.evidence_item_ids || [] }));
     const recommendations = (await query(client, 'select * from recommendations order by recommendation_id')).map(r => ({ recommendationId: r.recommendation_id, accountId: r.account_id, recommendationType: r.recommendation_type, title: r.title, reason: r.reason, priority: r.priority, status: r.status, suggestedOwnerUserId: r.suggested_owner_user_id, suggestedDueDate: toDateString(r.suggested_due_date), confidence: r.confidence, evidenceItemIds: r.evidence_item_ids || [] }));
+    const accountPlans = (await query(client, 'select * from account_plans order by account_plan_id')).map(p => ({ accountPlanId: p.account_plan_id, accountId: p.account_id, planName: p.plan_name, status: p.status, planSummary: p.plan_summary, ownerUserId: p.owner_user_id, targetReviewDate: toDateString(p.target_review_date), updatedAt: toIso(p.updated_at) }));
+    const accountPlanObjectives = (await query(client, 'select * from account_plan_objectives order by account_plan_objective_id')).map(o => ({ accountPlanObjectiveId: o.account_plan_objective_id, accountPlanId: o.account_plan_id, title: o.title, objectiveType: o.objective_type, status: o.status, priority: o.priority, targetDate: toDateString(o.target_date), successMetric: o.success_metric, linkedRecommendationId: o.linked_recommendation_id }));
+    const accountPlanStakeholders = (await query(client, 'select * from account_plan_stakeholders order by account_plan_stakeholder_id')).map(s => ({ accountPlanStakeholderId: s.account_plan_stakeholder_id, accountPlanId: s.account_plan_id, contactId: s.contact_id, stakeholderRole: s.stakeholder_role, relationshipStrength: s.relationship_strength, sentiment: s.sentiment, notes: s.notes }));
 
-    activeData = { ...staticData, users, accounts, integrations, externalIdentities, accountOwners, aliases, contacts, agreements, renewals, tickets, devices, deviceHealthSignals, securityFindings, securityCoverage, evidenceItems, accountHealthScores, recommendations };
+    activeData = { ...staticData, users, accounts, integrations, externalIdentities, accountOwners, aliases, contacts, agreements, renewals, tickets, devices, deviceHealthSignals, securityFindings, securityCoverage, evidenceItems, accountHealthScores, recommendations, accountPlans, accountPlanObjectives, accountPlanStakeholders };
     return activeData;
   } finally {
     client.release();
@@ -53,7 +56,7 @@ async function initialize() {
 }
 function getData() { return activeData; }
 async function databaseStatus() {
-  const tableNames = ['users','accounts','integrations','account_external_identities','account_owners','account_aliases','contacts','agreements','renewals','tickets','devices','device_health_signals','security_findings','security_coverage','evidence_items','account_health_scores','recommendations','app_settings'];
+  const tableNames = ['users','accounts','integrations','account_external_identities','account_owners','account_aliases','contacts','agreements','renewals','tickets','devices','device_health_signals','security_findings','security_coverage','evidence_items','account_health_scores','recommendations','account_plans','account_plan_objectives','account_plan_stakeholders','app_settings'];
   const status = { provider: providerName(), databaseConfigured: Boolean(process.env.ONEOP2_DATABASE_URL), connected: false, tableCounts: {}, requiredTablesPresent: false, seedValid: false };
   if (providerName() !== 'postgres') return status;
   const client = await getPool().connect();

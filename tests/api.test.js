@@ -139,6 +139,15 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
     assert.ok(result.body.data.some(a => a.generatedArtifactId === artifactId));
 
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/account-plan');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.accountPlanId, 'plan_acme_2026');
+    assert.ok(result.body.data.objectives.length >= 3);
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/account-plan', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'active', planSummary: 'Updated test account plan summary.' }) });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.planSummary, 'Updated test account plan summary.');
+
     result = await request(baseUrl, '/api/v1/portfolio/accounts-at-risk');
     assert.equal(result.response.status, 200);
     assert.ok(result.body.data.some(a => a.accountId === 'acct_northstar'));
