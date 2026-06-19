@@ -10,7 +10,7 @@ Sprint 3 made the intelligence actionable with stubbed PSA task creation, write-
 
 Sprint 4 added durable local JSON persistence, a repository-style store boundary, a mock PSA adapter, persisted runtime workflow state, PSA note stubs, QBR/email artifacts, portfolio filters, and deterministic assistant prompts.
 
-Sprint 5 starts the integration-ready foundation: persistence provider diagnostics, PostgreSQL starter schema, hardened PSA adapter contracts, safer write-back audits, sync preview counts, integration capability status, artifact export, and email handoff guardrails. Sprint 6 begins by activating a PostgreSQL-backed runtime-state provider behind the existing store interface.
+Sprint 5 starts the integration-ready foundation: persistence provider diagnostics, PostgreSQL starter schema, hardened PSA adapter contracts, safer write-back audits, sync preview counts, integration capability status, artifact export, and email handoff guardrails. Sprint 6 activates PostgreSQL-backed runtime state, normalized-table reads, provider status UX, account plans, and generated-artifact review lifecycle controls.
 
 ## Current Features
 
@@ -38,7 +38,7 @@ Sprint 5 starts the integration-ready foundation: persistence provider diagnosti
 - PostgreSQL starter schema under `db/schema.sql`.
 - Typed mock PSA adapter for task and note stubs with deterministic IDs, required-field validation, and richer audit details.
 - QBR draft and customer email draft artifact endpoints.
-- Generated artifact markdown export and customer email review handoff endpoints.
+- Generated artifact markdown export, evidence appendix, review lifecycle, and customer email review handoff endpoints.
 - Integration capability status and sync preview count responses.
 - Assistant prompt endpoint for call prep, risk rationale, and next actions.
 - Integration list and sync stub endpoint.
@@ -79,7 +79,7 @@ npm test
 Expected result:
 
 ```text
-All Sprint 5 API smoke tests passed.
+All Sprint 6 API smoke tests passed.
 ```
 
 ## Demo searches
@@ -114,6 +114,7 @@ GET  /api/v1/accounts/:accountId/write-back-audit-events
 PATCH /api/v1/recommendations/:recommendationId
 POST /api/v1/accounts/:accountId/artifacts/account-brief
 GET  /api/v1/generated-artifacts/:generatedArtifactId
+PATCH /api/v1/generated-artifacts/:generatedArtifactId
 GET  /api/v1/accounts/:accountId/generated-artifacts
 GET  /api/v1/generated-artifacts/:generatedArtifactId/evidence
 GET  /api/v1/portfolio/accounts-at-risk
@@ -126,7 +127,9 @@ POST /api/v1/admin/store/reset
 POST /api/v1/accounts/:accountId/psa/notes/preview
 POST /api/v1/accounts/:accountId/psa/notes
 POST /api/v1/accounts/:accountId/artifacts/qbr-draft
+GET  /api/v1/generated-artifacts/:generatedArtifactId/export?format=markdown
 POST /api/v1/accounts/:accountId/artifacts/customer-email-draft
+POST /api/v1/generated-artifacts/:generatedArtifactId/email-handoff
 POST /api/v1/accounts/:accountId/assistant/ask
 GET  /api/v1/admin/integrations
 POST /api/v1/admin/integrations/:integrationConnectionId/sync

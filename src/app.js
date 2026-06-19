@@ -438,6 +438,20 @@ async function handleApi(req, res, url) {
     return json(res, 200, envelope(artifact));
   }
 
+  if (req.method === 'PATCH' && parts[2] === 'generated-artifacts' && parts.length === 4) {
+    const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
+    if (!artifact) return notFound(res, 'Generated artifact not found.');
+    const body = await parseBody(req);
+    const allowed = ['draft', 'reviewed', 'approved', 'archived'];
+    if (!allowed.includes(body.status)) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Invalid generated artifact status.', field: 'status' }]));
+    artifact.status = body.status;
+    artifact.reviewedByUserId = body.status === 'reviewed' || body.status === 'approved' ? currentUser()?.userId : artifact.reviewedByUserId;
+    artifact.reviewNotes = body.reviewNotes || artifact.reviewNotes || null;
+    artifact.updatedAt = now();
+    await store.flush();
+    return json(res, 200, envelope(artifact));
+  }
+
   if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'generated-artifacts') {
     if (!ensureAccount(res, parts[3])) return;
     const artifactType = url.searchParams.get('artifactType');
@@ -600,7 +614,9 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && parts[2] === 'generated-artifacts' && parts[4] === 'export') {
     const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
     if (!artifact) return notFound(res, 'Generated artifact not found.');
-    return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, exportFormat: url.searchParams.get('format') || 'markdown', fileName: `${artifact.generatedArtifactId}.md`, body: artifact.body, evidence: evidenceForIds(artifact.evidenceItemIds || []) }));
+    const evidence = evidenceForIds(artifact.evidenceItemIds || []);
+    const evidenceAppendix = evidence.length ? `\n\n## Evidence Appendix\n${evidence.map(ev => `- ${ev.sourceSystemName} / ${ev.sourceRecordType} / ${ev.sourceRecordId}: ${ev.summary}`).join('\n')}` : '';
+    return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, exportFormat: url.searchParams.get('format') || 'markdown', fileName: `${artifact.generatedArtifactId}.md`, body: `${artifact.body}${evidenceAppendix}`, evidence }));
   }
 
   if (req.method === 'POST' && parts[2] === 'generated-artifacts' && parts[4] === 'email-handoff') {

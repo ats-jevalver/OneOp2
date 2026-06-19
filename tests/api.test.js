@@ -184,6 +184,16 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.exportFormat, 'markdown');
     assert.ok(result.body.data.body.includes('Executive Summary'));
+    assert.ok(result.body.data.body.includes('Evidence Appendix'));
+    assert.ok(result.body.data.evidence.length >= 1);
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${qbrArtifactId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'reviewed', reviewNotes: 'Validated in Sprint 6 smoke test.' }) });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.status, 'reviewed');
+    assert.equal(result.body.data.reviewNotes, 'Validated in Sprint 6 smoke test.');
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${qbrArtifactId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'published' }) });
+    assert.equal(result.response.status, 400);
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/customer-email-draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_security_email' }) });
     assert.equal(result.response.status, 201);
@@ -210,7 +220,7 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
     assert.ok(result.body.data.every(row => row.owner.userId === 'usr_am_jane'));
 
-    console.log('All Sprint 5 API smoke tests passed.');
+    console.log('All Sprint 6 API smoke tests passed.');
   } finally { server.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
 
