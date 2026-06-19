@@ -60,6 +60,144 @@ create table if not exists account_external_identities (
 create index if not exists idx_external_identity_account on account_external_identities(account_id);
 create index if not exists idx_external_identity_match_status on account_external_identities(match_status);
 
+
+create table if not exists account_owners (
+  account_id text not null references accounts(account_id),
+  user_id text not null references users(user_id),
+  role text not null,
+  is_primary boolean not null default false,
+  primary key (account_id, user_id, role)
+);
+
+create index if not exists idx_account_owners_user on account_owners(user_id);
+
+create table if not exists account_aliases (
+  account_id text not null references accounts(account_id),
+  alias_value text not null,
+  primary key (account_id, alias_value)
+);
+
+create index if not exists idx_account_aliases_alias on account_aliases(alias_value);
+
+create table if not exists agreements (
+  agreement_id text primary key,
+  account_id text not null references accounts(account_id),
+  name text not null,
+  status text not null,
+  agreement_type text not null,
+  renewal_date date,
+  monthly_recurring_revenue numeric(12,2),
+  annual_recurring_revenue numeric(12,2)
+);
+
+create index if not exists idx_agreements_account on agreements(account_id);
+
+create table if not exists renewals (
+  renewal_id text primary key,
+  account_id text not null references accounts(account_id),
+  agreement_id text references agreements(agreement_id),
+  renewal_date date not null,
+  status text not null,
+  renewal_amount numeric(12,2),
+  owner_user_id text references users(user_id),
+  days_until_renewal integer,
+  risk_reason text
+);
+
+create index if not exists idx_renewals_account_date on renewals(account_id, renewal_date);
+
+create table if not exists tickets (
+  ticket_id text primary key,
+  account_id text not null references accounts(account_id),
+  source_system_name text not null,
+  external_id text not null,
+  title text not null,
+  status text not null,
+  priority text,
+  category text,
+  subcategory text,
+  assigned_team text,
+  sla_status text,
+  is_escalated boolean not null default false,
+  is_recurring_issue_candidate boolean not null default false,
+  created_at_source timestamptz,
+  age_days integer
+);
+
+create index if not exists idx_tickets_account_status on tickets(account_id, status);
+create index if not exists idx_tickets_priority on tickets(priority);
+
+create table if not exists devices (
+  device_id text primary key,
+  account_id text not null references accounts(account_id),
+  source_system_name text not null,
+  external_id text not null,
+  display_name text not null,
+  device_type text,
+  status text,
+  operating_system text,
+  last_seen_at timestamptz,
+  last_patched_at timestamptz,
+  patch_status text,
+  warranty_expiration_date date,
+  age_years numeric(5,2),
+  is_end_of_life boolean not null default false,
+  is_server boolean not null default false,
+  is_critical boolean not null default false
+);
+
+create index if not exists idx_devices_account_status on devices(account_id, status);
+create index if not exists idx_devices_patch_status on devices(patch_status);
+
+create table if not exists device_health_signals (
+  device_health_signal_id text primary key,
+  account_id text not null references accounts(account_id),
+  device_id text references devices(device_id),
+  source_system_name text not null,
+  external_id text not null,
+  signal_type text not null,
+  severity text not null,
+  summary text not null,
+  observed_at timestamptz
+);
+
+create index if not exists idx_device_health_signals_account on device_health_signals(account_id);
+create index if not exists idx_device_health_signals_severity on device_health_signals(severity);
+
+create table if not exists security_findings (
+  security_finding_id text primary key,
+  account_id text not null references accounts(account_id),
+  source_system_name text not null,
+  external_id text not null,
+  finding_type text not null,
+  severity text not null,
+  status text not null,
+  title text not null,
+  description text,
+  affected_service text,
+  business_impact text,
+  recommended_remediation text,
+  observed_at timestamptz,
+  is_customer_facing boolean not null default false
+);
+
+create index if not exists idx_security_findings_account_status on security_findings(account_id, status);
+create index if not exists idx_security_findings_severity on security_findings(severity);
+
+create table if not exists security_coverage (
+  security_coverage_id text primary key,
+  account_id text not null references accounts(account_id),
+  coverage_type text not null,
+  coverage_status text not null,
+  product_name text,
+  vendor_name text,
+  device_count_covered integer,
+  device_count_missing integer,
+  last_verified_at timestamptz
+);
+
+create index if not exists idx_security_coverage_account_status on security_coverage(account_id, coverage_status);
+
 create table if not exists contacts (
   contact_id text primary key,
   account_id text not null references accounts(account_id),
@@ -170,3 +308,4 @@ create table if not exists app_settings (
   setting_value jsonb not null,
   updated_at timestamptz not null default now()
 );
+

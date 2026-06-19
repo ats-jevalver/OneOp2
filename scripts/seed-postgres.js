@@ -79,10 +79,55 @@ async function main() {
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
     `, e => [e.accountExternalIdentityId, e.accountId, e.integrationConnectionId, e.sourceSystemType, e.sourceSystemName, e.externalRecordType, e.externalId, e.externalDisplayName, e.externalDomain, e.matchStatus, e.matchConfidence, e.matchReason]);
 
+    await insertMany(client, data.accountOwners, `
+      insert into account_owners (account_id, user_id, role, is_primary)
+      values ($1,$2,$3,$4)
+    `, o => [o.accountId, o.userId, o.role, Boolean(o.isPrimary)]);
+
+    await insertMany(client, data.aliases, `
+      insert into account_aliases (account_id, alias_value)
+      values ($1,$2)
+    `, a => [a.accountId, a.aliasValue]);
+
     await insertMany(client, data.contacts, `
       insert into contacts (contact_id, account_id, full_name, email, title, is_primary_contact, is_technical_contact)
       values ($1,$2,$3,$4,$5,$6,$7)
     `, c => [c.contactId, c.accountId, c.fullName, c.email, c.title, Boolean(c.isPrimaryContact), Boolean(c.isTechnicalContact)]);
+
+    await insertMany(client, data.agreements, `
+      insert into agreements (agreement_id, account_id, name, status, agreement_type, renewal_date, monthly_recurring_revenue, annual_recurring_revenue)
+      values ($1,$2,$3,$4,$5,$6,$7,$8)
+    `, a => [a.agreementId, a.accountId, a.name, a.status, a.agreementType, a.renewalDate, a.monthlyRecurringRevenue, a.annualRecurringRevenue]);
+
+    await insertMany(client, data.renewals, `
+      insert into renewals (renewal_id, account_id, agreement_id, renewal_date, status, renewal_amount, owner_user_id, days_until_renewal, risk_reason)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `, r => [r.renewalId, r.accountId, r.agreementId, r.renewalDate, r.status, r.renewalAmount, r.ownerUserId, r.daysUntilRenewal, r.riskReason]);
+
+    await insertMany(client, data.tickets, `
+      insert into tickets (ticket_id, account_id, source_system_name, external_id, title, status, priority, category, subcategory, assigned_team, sla_status, is_escalated, is_recurring_issue_candidate, created_at_source, age_days)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+    `, t => [t.ticketId, t.accountId, t.sourceSystemName, t.externalId, t.title, t.status, t.priority, t.category, t.subcategory, t.assignedTeam, t.slaStatus, Boolean(t.isEscalated), Boolean(t.isRecurringIssueCandidate), toDate(t.createdAtSource), t.ageDays]);
+
+    await insertMany(client, data.devices, `
+      insert into devices (device_id, account_id, source_system_name, external_id, display_name, device_type, status, operating_system, last_seen_at, last_patched_at, patch_status, warranty_expiration_date, age_years, is_end_of_life, is_server, is_critical)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+    `, d => [d.deviceId, d.accountId, d.sourceSystemName, d.externalId, d.displayName, d.deviceType, d.status, d.operatingSystem, toDate(d.lastSeenAt), toDate(d.lastPatchedAt), d.patchStatus, d.warrantyExpirationDate, d.ageYears, Boolean(d.isEndOfLife), Boolean(d.isServer), Boolean(d.isCritical)]);
+
+    await insertMany(client, data.deviceHealthSignals, `
+      insert into device_health_signals (device_health_signal_id, account_id, device_id, source_system_name, external_id, signal_type, severity, summary, observed_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `, s => [s.deviceHealthSignalId, s.accountId, s.deviceId, s.sourceSystemName, s.externalId, s.signalType, s.severity, s.summary, toDate(s.observedAt)]);
+
+    await insertMany(client, data.securityFindings, `
+      insert into security_findings (security_finding_id, account_id, source_system_name, external_id, finding_type, severity, status, title, description, affected_service, business_impact, recommended_remediation, observed_at, is_customer_facing)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+    `, f => [f.securityFindingId, f.accountId, f.sourceSystemName, f.externalId, f.findingType, f.severity, f.status, f.title, f.description, f.affectedService, f.businessImpact, f.recommendedRemediation, toDate(f.observedAt), Boolean(f.isCustomerFacing)]);
+
+    await insertMany(client, data.securityCoverage, `
+      insert into security_coverage (security_coverage_id, account_id, coverage_type, coverage_status, product_name, vendor_name, device_count_covered, device_count_missing, last_verified_at)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    `, c => [c.securityCoverageId, c.accountId, c.coverageType, c.coverageStatus, c.productName, c.vendorName, c.deviceCountCovered, c.deviceCountMissing, toDate(c.lastVerifiedAt)]);
 
     await insertMany(client, data.evidenceItems, `
       insert into evidence_items (evidence_item_id, account_id, source_system_type, source_system_name, source_record_type, source_record_id, summary, observed_at)
@@ -106,7 +151,7 @@ async function main() {
 
     await client.query('commit');
 
-    const tables = ['users','accounts','integrations','account_external_identities','contacts','evidence_items','account_health_scores','recommendations','app_settings'];
+    const tables = ['users','accounts','integrations','account_external_identities','account_owners','account_aliases','contacts','agreements','renewals','tickets','devices','device_health_signals','security_findings','security_coverage','evidence_items','account_health_scores','recommendations','app_settings'];
     const counts = {};
     for (const table of tables) {
       const result = await pool.query(`select count(*)::int as count from ${table}`);
@@ -126,3 +171,4 @@ main().catch(error => {
   console.error(error.message);
   process.exit(1);
 });
+

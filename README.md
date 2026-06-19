@@ -188,7 +188,7 @@ $env:ONEOP2_DATABASE_URL="postgres://user:password@localhost:5432/oneop2"
 npm start
 ```
 
-The PostgreSQL provider stores OneOp2 runtime workflow state in `app_settings` under key `oneop2_runtime_state`. Static seed data still comes from `src/data.js`; future work can migrate static/reference entities into normalized tables.
+The PostgreSQL provider stores OneOp2 runtime workflow state in `app_settings` under key `oneop2_runtime_state`. The seed loader also populates normalized reference and operational tables for users, accounts, integrations, mappings, owners, aliases, contacts, agreements, renewals, tickets, devices, RMM health signals, security findings, security coverage, evidence, health scores, and recommendations. Static API reads still come from `src/data.js`; future work can switch read paths to PostgreSQL table queries.
 
 ## Sprint 6 Candidates
 
