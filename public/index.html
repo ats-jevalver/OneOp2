@@ -4,7 +4,7 @@
 <body>
   <header class="topbar"><div><strong>OneOp2</strong><span>Account Intelligence MVP</span></div><nav><a href="/">Account Search</a><a href="#" id="showPortfolio">Portfolio</a><a href="#" id="showMapping">Mapping Admin</a><a href="https://github.com/ats-jevalver/OneOp2" target="_blank" rel="noreferrer">GitHub</a></nav></header>
   <main class="layout">
-    <section class="search-panel"><h1>Account Command Center</h1><p>Search a seeded account to load Sprint 3 actionable workflows.</p><form id="searchForm"><input id="query" placeholder="Search acme, greenfield, harbor, PSA-1001..." value="acme" /><button type="submit">Search</button></form><div id="results" class="results"></div></section>
+    <section class="search-panel"><h1>Account Command Center</h1><p>Search a seeded account to load PostgreSQL-backed Sprint 6 workflows.</p><div id="systemStatus" class="status-card">Loading provider status...</div><form id="searchForm"><input id="query" placeholder="Search acme, greenfield, harbor, PSA-1001..." value="acme" /><button type="submit">Search</button></form><div id="results" class="results"></div></section>
     <section id="commandCenter" class="command-center empty"><p>Select an account to load its command center.</p></section>
   </main>
   <dialog id="evidenceDialog"><div class="dialog-header"><h2 id="dialogTitle">Evidence</h2><button class="secondary" id="closeEvidence">Close</button></div><div id="evidenceBody"></div></dialog>
@@ -13,3 +13,4 @@
   <script src="/app.js"></script>
 </body>
 </html>
+

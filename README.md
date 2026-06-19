@@ -207,6 +207,14 @@ GET   /api/v1/admin/database/status
 
 `PATCH /api/v1/session/current-user` is a local-demo helper for RBAC testing. Do not expose it as-is in production authentication flows. `GET /api/v1/admin/database/status` returns seed/table health without returning connection secrets.
 
+
+Sprint 6 UI additions:
+
+- Provider/database status panel on the Account Search screen.
+- Local demo current-user switch buttons for account manager/admin testing.
+- QBR draft and customer email draft quick actions on the Account Command Center.
+- Markdown export and email handoff links for generated artifacts.
+
 ## Sprint 6 Candidates
 
 - Activate PostgreSQL provider implementation.
