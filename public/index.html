@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OneOp2 Account Command Center</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <strong>OneOp2</strong>
+      <span>Account Intelligence MVP</span>
+    </div>
+    <nav>
+      <a href="/">Account Search</a>
+      <a href="/docs/">Docs</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="search-panel">
+      <h1>Account Command Center</h1>
+      <p>Search a seeded account to load the Sprint 1 account header and snapshot.</p>
+      <form id="searchForm">
+        <input id="query" placeholder="Search acme, greenfield, harbor, PSA-1001..." value="acme" />
+        <button type="submit">Search</button>
+      </form>
+      <div id="results" class="results"></div>
+    </section>
+
+    <section id="commandCenter" class="command-center empty">
+      <p>Select an account to load its command center.</p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

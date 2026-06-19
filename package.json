@@ -1,0 +1,14 @@
+{
+  "name": "oneop2",
+  "version": "0.1.0",
+  "description": "OneOp2 Account Intelligence MVP - Sprint 1 starter implementation.",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node tests/api.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

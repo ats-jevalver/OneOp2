@@ -1,0 +1,26 @@
+:root { color-scheme: light; font-family: Inter, Segoe UI, Arial, sans-serif; }
+body { margin: 0; background: #f5f7fb; color: #172033; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: 16px 28px; background: #10233f; color: white; }
+.topbar span { margin-left: 12px; color: #b9c8dd; }
+.topbar a { color: white; margin-left: 18px; text-decoration: none; }
+.layout { max-width: 1180px; margin: 28px auto; padding: 0 20px; display: grid; grid-template-columns: 360px 1fr; gap: 20px; }
+.search-panel, .command-center { background: white; border: 1px solid #dfe6f1; border-radius: 14px; padding: 20px; box-shadow: 0 8px 20px rgba(16, 35, 63, .06); }
+h1 { margin-top: 0; }
+form { display: flex; gap: 8px; }
+input { flex: 1; padding: 10px 12px; border: 1px solid #c8d2e1; border-radius: 8px; }
+button { background: #1d5fd1; color: white; border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer; }
+.result { border: 1px solid #e1e7f0; border-radius: 10px; padding: 12px; margin-top: 10px; cursor: pointer; }
+.result:hover { border-color: #1d5fd1; }
+.muted { color: #66758d; }
+.header-card { display: flex; justify-content: space-between; gap: 20px; border-bottom: 1px solid #e6ebf3; padding-bottom: 16px; margin-bottom: 16px; }
+.badge { display: inline-block; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.badge.healthy { background: #dff8e8; color: #136c35; }
+.badge.watch { background: #fff3cd; color: #7a5600; }
+.badge.at_risk, .badge.renewal_risk { background: #ffe0e0; color: #972525; }
+.badge.expansion_candidate { background: #dfeeff; color: #174e91; }
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.card { border: 1px solid #e1e7f0; border-radius: 12px; padding: 14px; }
+.card h3 { margin: 0 0 10px; }
+.warning { background: #fff8e1; border: 1px solid #f4d06f; border-radius: 10px; padding: 10px; margin: 8px 0; }
+.empty { color: #66758d; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .cards { grid-template-columns: 1fr; } }
