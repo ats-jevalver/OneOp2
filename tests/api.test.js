@@ -11,6 +11,7 @@ async function request(baseUrl, path, options = {}) { const response = await fet
   const baseUrl = `http://127.0.0.1:${port}`;
   try {
     await request(baseUrl, '/api/v1/admin/store/reset', { method: 'POST' });
+
     let result = await request(baseUrl, '/api/v1/accounts/search?query=acme&page=1&pageSize=10');
     assert.equal(result.response.status, 200);
     assert.ok(result.body.data.some(a => a.accountId === 'acct_acme'));
@@ -71,19 +72,24 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.ok(result.body.data.length >= 3);
 
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync', { method: 'POST' });
+    assert.equal(result.response.status, 403);
+
+    result = await request(baseUrl, '/api/v1/integrations/status');
     assert.equal(result.response.status, 200);
-    assert.equal(result.body.data.status, 'succeeded');
+    assert.equal(result.body.data.store.provider, 'json');
+    assert.ok(result.body.data.integrations.some(i => i.capabilities.includes('create_task')));
 
     result = await request(baseUrl, '/api/v1/product-events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ eventType: 'test_event', accountId: 'acct_acme' }) });
     assert.equal(result.response.status, 201);
     assert.equal(result.body.data.eventType, 'test_event');
 
-        result = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/tasks/preview', {
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/tasks/preview', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_qbr' })
     });
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.isValid, true);
     assert.equal(result.body.data.payload.recommendationId, 'rec_acme_qbr');
+    assert.equal(result.body.data.payload.externalCompanyId, 'PSA-1001');
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/tasks', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_qbr', confirmed: true })
@@ -93,7 +99,12 @@ async function request(baseUrl, path, options = {}) { const response = await fet
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/write-back-audit-events');
     assert.equal(result.response.status, 200);
-    assert.ok(result.body.data.some(e => e.recommendationId === 'rec_acme_qbr'));
+    assert.ok(result.body.data.some(e => e.recommendationId === 'rec_acme_qbr' && e.adapter === 'mock' && e.requestSummary.externalCompanyId === 'PSA-1001'));
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_riverbend/psa/tasks/preview', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_qbr' })
+    });
+    assert.equal(result.response.status, 400);
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/account-brief', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
     assert.equal(result.response.status, 201);
@@ -126,28 +137,43 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.ok(result.body.data.some(a => a.accountId === 'acct_summit'));
 
     result = await request(baseUrl, '/api/v1/admin/account-mapping/ext_riverbend_rmm_suggested/confirm', { method: 'POST' });
-    assert.equal(result.response.status, 200);
-    assert.equal(result.body.data.matchStatus, 'confirmed');
+    assert.equal(result.response.status, 403);
 
-        result = await request(baseUrl, '/api/v1/integrations/psa/status');
+    result = await request(baseUrl, '/api/v1/integrations/psa/status');
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.adapter, 'mock');
+    assert.ok(result.body.data.capabilities.includes('create_note'));
+
+    result = await request(baseUrl, '/api/v1/admin/store/status');
+    assert.equal(result.response.status, 403);
 
     result = await request(baseUrl, '/api/v1/admin/settings/psa-field-mapping');
-    assert.equal(result.response.status, 200);
-    assert.ok(result.body.data.defaultTaskType);
+    assert.equal(result.response.status, 403);
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/qbr-draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
     assert.equal(result.response.status, 201);
     assert.equal(result.body.data.artifactType, 'qbr_draft');
+    const qbrArtifactId = result.body.data.generatedArtifactId;
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${qbrArtifactId}/export?format=markdown`);
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.exportFormat, 'markdown');
+    assert.ok(result.body.data.body.includes('Executive Summary'));
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/customer-email-draft', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_security_email' }) });
     assert.equal(result.response.status, 201);
     assert.equal(result.body.data.artifactType, 'customer_email_draft');
+    const emailArtifactId = result.body.data.generatedArtifactId;
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${emailArtifactId}/email-handoff`, { method: 'POST' });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.status, 'ready_for_review');
+    assert.ok(result.body.data.guardrails.length >= 2);
 
     const brief = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/account-brief', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
     const notePreview = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId }) });
     assert.equal(notePreview.response.status, 200);
+    assert.equal(notePreview.body.data.payload.externalCompanyId, 'PSA-1001');
     const noteCreate = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId, confirmed: true }) });
     assert.equal(noteCreate.response.status, 201);
 
@@ -159,9 +185,6 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
     assert.ok(result.body.data.every(row => row.owner.userId === 'usr_am_jane'));
 
-    console.log('All Sprint 4 API smoke tests passed.');
+    console.log('All Sprint 5 API smoke tests passed.');
   } finally { server.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
-
-
-

@@ -20,6 +20,13 @@ function canWriteBack() { return ['admin','account_manager','sales_rep','service
 function canAdmin() { return currentUser()?.role === 'admin'; }
 function forAccount(list, accountId) { return list.filter(item => item.accountId === accountId); }
 
+function forbidden(res, message = 'Current user is not authorized for this action.') { return json(res, 403, envelope(null, {}, [{ code: 'forbidden', message }])); }
+function requireAdmin(res) { if (!canAdmin()) { forbidden(res, 'Admin role is required for this endpoint.'); return false; } return true; }
+function requireWriteBack(res) { if (!canWriteBack()) { forbidden(res, 'Write-back permission is required for this endpoint.'); return false; } return true; }
+function psaCompanyIdentity(accountId) {
+  return externalIdentities.find(e => e.accountId === accountId && e.sourceSystemType === 'psa' && (store.getMappingStatus(e.accountExternalIdentityId)?.matchStatus || e.matchStatus) === 'confirmed') || null;
+}
+
 function findOwner(accountId) {
   const owner = accountOwners.find(o => o.accountId === accountId && o.role === 'account_manager' && o.isPrimary) || accountOwners.find(o => o.accountId === accountId);
   if (!owner) return null;
@@ -154,6 +161,8 @@ function sourceRecordLabel(ev) { return `${ev.sourceSystemName}: ${ev.summary}`;
 function buildTaskPreview(accountId, body = {}) {
   const rec = byId(recommendations, 'recommendationId', body.recommendationId);
   if (!rec || rec.accountId !== accountId) return { error: { code: 'validation_error', message: 'A recommendation for this account is required.', field: 'recommendationId' } };
+  const psaIdentity = psaCompanyIdentity(accountId);
+  if (!psaIdentity) return { error: { code: 'mapping_required', message: 'A confirmed PSA company mapping is required before PSA write-back.', field: 'accountId' } };
   const account = byId(accounts, 'accountId', accountId);
   const evidence = evidenceForIds(rec.evidenceItemIds);
   const title = notBlank(body.title, rec.title);
@@ -161,7 +170,36 @@ function buildTaskPreview(accountId, body = {}) {
   const dueDate = body.dueDate || rec.suggestedDueDate;
   const evidenceSummary = evidence.map(sourceRecordLabel);
   const taskBody = notBlank(body.body, `${rec.reason}\n\nEvidence:\n${evidenceSummary.map(e => `- ${e}`).join('\n')}`);
-  return { payload: { accountId, accountName: account.displayName, recommendationId: rec.recommendationId, title, body: taskBody, ownerUserId, owner: userSummary(ownerUserId), dueDate, evidenceSummary, isStub: true }, warnings: ['Sprint 3 uses stubbed PSA write-back; no external PSA record is created.'] };
+  return { payload: { accountId, accountName: account.displayName, externalCompanyId: psaIdentity.externalId, recommendationId: rec.recommendationId, title, body: taskBody, ownerUserId, owner: userSummary(ownerUserId), dueDate, evidenceSummary, isStub: true }, warnings: ['Sprint 5 uses a typed mock PSA adapter; no external PSA record is created.'] };
+}
+
+function buildSyncSummary(integration) {
+  const base = { syncRunId: `sync_${Date.now()}`, status: 'succeeded', mode: 'preview', integrationConnectionId: integration.integrationConnectionId, systemType: integration.systemType };
+  if (integration.systemType === 'psa') return { ...base, counts: { scanned: 4, created: 0, updated: 2, skipped: 1, needsReview: 1 }, protectedRules: ['confirmed_mappings_are_never_overwritten', 'preview_before_import'] };
+  if (integration.systemType === 'rmm') return { ...base, counts: { scanned: 6, created: 0, updated: 3, skipped: 2, needsReview: 1 }, protectedRules: ['unmapped_clients_need_review'] };
+  if (integration.systemType === 'security' || integration.systemType === 'microsoft365') return { ...base, counts: { scanned: 5, created: 0, updated: 2, skipped: 3, needsReview: 0 }, protectedRules: ['stale_tokens_do_not_clear_existing_evidence'] };
+  return { ...base, counts: { scanned: 0, created: 0, updated: 0, skipped: 0, needsReview: 0 }, protectedRules: [] };
+}
+
+function integrationCapabilitySummary() {
+  return integrations.map(integration => ({
+    integrationConnectionId: integration.integrationConnectionId,
+    systemType: integration.systemType,
+    systemName: integration.systemName,
+    status: integration.status,
+    lastSuccessfulSyncAt: integration.lastSuccessfulSyncAt,
+    capabilities: integration.systemType === 'psa'
+      ? ['company_sync_preview', 'contact_sync_preview', 'ticket_sync_preview', 'create_task', 'create_note']
+      : integration.systemType === 'rmm'
+        ? ['device_health_read', 'patch_posture_read', 'alert_summary_read']
+        : ['finding_read', 'coverage_read', 'evidence_read']
+  }));
+}
+
+function auditWriteBack({ accountId, actionType, targetRecordType, status, requestPayload, adapterResult = {}, recommendationId = null, generatedArtifactId = null, error = null }) {
+  const audit = { writeBackAuditEventId: newId('audit'), accountId, actionType, targetRecordType, status, adapter: adapterResult.adapter || 'mock', requestSummary: requestPayload ? { title: requestPayload.title, accountId: requestPayload.accountId, externalCompanyId: requestPayload.externalCompanyId } : null, responseSummary: adapterResult.requestSummary || null, error, requestPayload, externalId: adapterResult.externalId || null, externalUrl: adapterResult.externalUrl || null, recommendationId, generatedArtifactId, createdAt: now() };
+  store.add('writeBackAuditEvents', audit);
+  return audit;
 }
 
 function createAccountBrief(accountId, requestedByUserId = null) {
@@ -291,16 +329,22 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/api/v1/admin/integrations') return json(res, 200, envelope(integrations));
 
+  if (req.method === 'GET' && url.pathname === '/api/v1/integrations/status') {
+    return json(res, 200, envelope({ store: store.providerInfo(), integrations: integrationCapabilitySummary() }));
+  }
+
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'sync') {
+    if (!requireAdmin(res)) return;
     const integration = byId(integrations, 'integrationConnectionId', parts[4]);
     if (!integration) return notFound(res, 'Integration not found.');
     integration.lastSuccessfulSyncAt = new Date().toISOString();
     integration.status = 'connected';
     integration.lastErrorMessage = null;
-    return json(res, 200, envelope({ syncRunId: `sync_${Date.now()}`, status: 'succeeded', integrationConnectionId: integration.integrationConnectionId }));
+    return json(res, 200, envelope(buildSyncSummary(integration)));
   }
 
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'tasks' && parts[6] === 'preview') {
+    if (!requireWriteBack(res)) return;
     if (!ensureAccount(res, parts[3])) return;
     const body = await parseBody(req);
     const preview = buildTaskPreview(parts[3], body);
@@ -309,19 +353,22 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'tasks' && !parts[6]) {
+    if (!requireWriteBack(res)) return;
     if (!ensureAccount(res, parts[3])) return;
     const body = await parseBody(req);
     if (body.confirmed !== true) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'confirmed must be true before creating a PSA task.', field: 'confirmed' }]));
     const preview = buildTaskPreview(parts[3], body);
     if (preview.error) return json(res, 400, envelope(null, {}, [preview.error]));
-    const externalId = newId('stub_psa_task');
-    const activity = { activityId: newId('activity'), accountId: parts[3], activityType: 'psa_task_stub', title: preview.payload.title, body: preview.payload.body, status: 'open', dueDate: preview.payload.dueDate, ownerUserId: preview.payload.ownerUserId, recommendationId: preview.payload.recommendationId, externalId, externalUrl: `stub://psa/tasks/${externalId}`, createdAt: now() };
+    const activity = { activityId: newId('activity'), accountId: parts[3], activityType: 'psa_task_stub', title: preview.payload.title, body: preview.payload.body, status: 'open', dueDate: preview.payload.dueDate, ownerUserId: preview.payload.ownerUserId, recommendationId: preview.payload.recommendationId, createdAt: now() };
     const adapterResult = getPsaAdapter().createTask(preview.payload);
+    if (adapterResult.status === 'validation_failed') {
+      const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'failed', requestPayload: preview.payload, adapterResult, recommendationId: preview.payload.recommendationId, error: { code: 'adapter_validation_failed', message: 'PSA adapter rejected the task payload.', missingFields: adapterResult.missingFields } });
+      return json(res, 400, envelope(null, {}, [{ code: 'adapter_validation_failed', message: 'PSA adapter rejected the task payload.', missingFields: adapterResult.missingFields, auditEventId: audit.writeBackAuditEventId }]));
+    }
     activity.externalId = adapterResult.externalId; activity.externalUrl = adapterResult.externalUrl;
     store.add('activities', activity);
     store.setRecommendationStatus(preview.payload.recommendationId, { status: 'converted_to_task', updatedAt: now() });
-    const audit = { writeBackAuditEventId: newId('audit'), accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'succeeded', requestPayload: preview.payload, externalId: adapterResult.externalId, externalUrl: adapterResult.externalUrl, recommendationId: preview.payload.recommendationId, createdAt: now() };
-    store.add('writeBackAuditEvents', audit);
+    const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'succeeded', requestPayload: preview.payload, adapterResult, recommendationId: preview.payload.recommendationId });
     return json(res, 201, envelope({ activityId: activity.activityId, externalId: audit.externalId, externalUrl: audit.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId }));
   }
 
@@ -372,6 +419,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'confirm') {
+    if (!requireAdmin(res)) return;
     const identity = byId(externalIdentities, 'accountExternalIdentityId', parts[4]);
     if (!identity) return notFound(res, 'Account external identity not found.');
     const overlay = store.setMappingStatus(identity.accountExternalIdentityId, { matchStatus: 'confirmed', matchConfidence: 100, matchedAt: now(), matchedBy: 'runtime_admin' });
@@ -379,6 +427,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'reject') {
+    if (!requireAdmin(res)) return;
     const identity = byId(externalIdentities, 'accountExternalIdentityId', parts[4]);
     if (!identity) return notFound(res, 'Account external identity not found.');
     const overlay = store.setMappingStatus(identity.accountExternalIdentityId, { matchStatus: 'rejected', matchedAt: now(), matchedBy: 'runtime_admin' });
@@ -407,10 +456,12 @@ async function handleApi(req, res, url) {
     return json(res, 200, envelope(rows));
   }
   if (req.method === 'GET' && url.pathname === '/api/v1/admin/settings/psa-field-mapping') {
+    if (!requireAdmin(res)) return;
     return json(res, 200, envelope(store.getState().settings.psaFieldMapping));
   }
 
   if (req.method === 'PATCH' && url.pathname === '/api/v1/admin/settings/psa-field-mapping') {
+    if (!requireAdmin(res)) return;
     const body = await parseBody(req);
     const settings = store.getState().settings;
     settings.psaFieldMapping = { ...settings.psaFieldMapping, ...body };
@@ -427,23 +478,38 @@ async function handleApi(req, res, url) {
     return json(res, 200, envelope(getPsaAdapter().getConnectionStatus()));
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/v1/admin/store/status') {
+    if (!requireAdmin(res)) return;
+    return json(res, 200, envelope(store.providerInfo()));
+  }
+
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'notes' && parts[6] === 'preview') {
+    if (!requireWriteBack(res)) return;
     if (!ensureAccount(res, parts[3])) return;
     const body = await parseBody(req);
+    const psaIdentity = psaCompanyIdentity(parts[3]);
+    if (!psaIdentity) return json(res, 400, envelope(null, {}, [{ code: 'mapping_required', message: 'A confirmed PSA company mapping is required before PSA write-back.', field: 'accountId' }]));
     const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === body.generatedArtifactId && a.accountId === parts[3]);
     if (!artifact) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'generatedArtifactId is required for this account.', field: 'generatedArtifactId' }]));
-    return json(res, 200, envelope({ isValid: true, payload: { accountId: parts[3], generatedArtifactId: artifact.generatedArtifactId, title: artifact.title, body: artifact.body, noteType: store.getState().settings.psaFieldMapping.defaultNoteType, isStub: true }, warnings: ['Sprint 4 uses mock PSA note creation.'] }));
+    return json(res, 200, envelope({ isValid: true, payload: { accountId: parts[3], externalCompanyId: psaIdentity.externalId, generatedArtifactId: artifact.generatedArtifactId, title: artifact.title, body: artifact.body, noteType: store.getState().settings.psaFieldMapping.defaultNoteType, isStub: true }, warnings: ['Sprint 5 uses a typed mock PSA adapter; no external PSA record is created.'] }));
   }
 
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'notes' && !parts[6]) {
+    if (!requireWriteBack(res)) return;
     if (!ensureAccount(res, parts[3])) return;
     const body = await parseBody(req);
     if (body.confirmed !== true) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'confirmed must be true before creating a PSA note.', field: 'confirmed' }]));
+    const psaIdentity = psaCompanyIdentity(parts[3]);
+    if (!psaIdentity) return json(res, 400, envelope(null, {}, [{ code: 'mapping_required', message: 'A confirmed PSA company mapping is required before PSA write-back.', field: 'accountId' }]));
     const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === body.generatedArtifactId && a.accountId === parts[3]);
     if (!artifact) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'generatedArtifactId is required for this account.', field: 'generatedArtifactId' }]));
-    const adapterResult = getPsaAdapter().createNote({ accountId: parts[3], title: artifact.title, body: artifact.body, generatedArtifactId: artifact.generatedArtifactId });
-    const audit = { writeBackAuditEventId: newId('audit'), accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'succeeded', externalId: adapterResult.externalId, externalUrl: adapterResult.externalUrl, generatedArtifactId: artifact.generatedArtifactId, createdAt: now() };
-    store.add('writeBackAuditEvents', audit);
+    const payload = { accountId: parts[3], externalCompanyId: psaIdentity.externalId, title: artifact.title, body: artifact.body, generatedArtifactId: artifact.generatedArtifactId };
+    const adapterResult = getPsaAdapter().createNote(payload);
+    if (adapterResult.status === 'validation_failed') {
+      const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'failed', requestPayload: payload, adapterResult, generatedArtifactId: artifact.generatedArtifactId, error: { code: 'adapter_validation_failed', message: 'PSA adapter rejected the note payload.', missingFields: adapterResult.missingFields } });
+      return json(res, 400, envelope(null, {}, [{ code: 'adapter_validation_failed', message: 'PSA adapter rejected the note payload.', missingFields: adapterResult.missingFields, auditEventId: audit.writeBackAuditEventId }]));
+    }
+    const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'succeeded', requestPayload: payload, adapterResult, generatedArtifactId: artifact.generatedArtifactId });
     return json(res, 201, envelope({ externalId: adapterResult.externalId, externalUrl: adapterResult.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId }));
   }
 
@@ -462,6 +528,18 @@ async function handleApi(req, res, url) {
     return json(res, 201, envelope(artifact));
   }
 
+  if (req.method === 'GET' && parts[2] === 'generated-artifacts' && parts[4] === 'export') {
+    const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
+    if (!artifact) return notFound(res, 'Generated artifact not found.');
+    return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, exportFormat: url.searchParams.get('format') || 'markdown', fileName: `${artifact.generatedArtifactId}.md`, body: artifact.body, evidence: evidenceForIds(artifact.evidenceItemIds || []) }));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'generated-artifacts' && parts[4] === 'email-handoff') {
+    const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
+    if (!artifact) return notFound(res, 'Generated artifact not found.');
+    if (artifact.artifactType !== 'customer_email_draft') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Only customer_email_draft artifacts can be prepared for email handoff.', field: 'generatedArtifactId' }]));
+    return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, status: 'ready_for_review', bodyFormat: 'text', subject: artifact.title, body: artifact.body, guardrails: ['Human approval required before send.', 'Evidence-linked claims only.', 'No direct send is performed by this MVP.'] }));
+  }
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'assistant' && parts[5] === 'ask') {
     if (!ensureAccount(res, parts[3])) return;
     const body = await parseBody(req);
@@ -509,6 +587,7 @@ function createHandler() {
 }
 
 module.exports = { createHandler, searchAccounts, commandCenter, revenue, summarizeService, summarizeRmm, summarizeSecurity, latestHealth, envelope };
+
 
 
 

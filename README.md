@@ -8,7 +8,9 @@ Sprint 2 added the first account intelligence loop: seeded service, RMM, and sec
 
 Sprint 3 made the intelligence actionable with stubbed PSA task creation, write-back audit history, generated account briefs, activity timeline, mapping admin actions, and portfolio views.
 
-Sprint 4 adds durable local JSON persistence, a repository-style store boundary, a mock PSA adapter, persisted runtime workflow state, PSA note stubs, QBR/email artifacts, portfolio filters, and deterministic assistant prompts.
+Sprint 4 added durable local JSON persistence, a repository-style store boundary, a mock PSA adapter, persisted runtime workflow state, PSA note stubs, QBR/email artifacts, portfolio filters, and deterministic assistant prompts.
+
+Sprint 5 starts the integration-ready foundation: persistence provider diagnostics, PostgreSQL starter schema, hardened PSA adapter contracts, safer write-back audits, sync preview counts, integration capability status, artifact export, and email handoff guardrails.
 
 ## Current Features
 
@@ -32,8 +34,12 @@ Sprint 4 adds durable local JSON persistence, a repository-style store boundary,
 - Generated artifact list/retrieve/evidence endpoints.
 - Portfolio At Risk, Renewal Risk, and Expansion Candidate endpoints.
 - Durable local JSON persistence for generated artifacts, audits, activities, recommendation statuses, and mapping decisions.
-- Mock PSA adapter for task and note stubs.
+- Persistence provider status endpoint with JSON default and PostgreSQL seam diagnostics.
+- PostgreSQL starter schema under `db/schema.sql`.
+- Typed mock PSA adapter for task and note stubs with deterministic IDs, required-field validation, and richer audit details.
 - QBR draft and customer email draft artifact endpoints.
+- Generated artifact markdown export and customer email review handoff endpoints.
+- Integration capability status and sync preview count responses.
 - Assistant prompt endpoint for call prep, risk rationale, and next actions.
 - Integration list and sync stub endpoint.
 - Product event tracking endpoint.
@@ -73,7 +79,7 @@ npm test
 Expected result:
 
 ```text
-All Sprint 4 API smoke tests passed.
+All Sprint 5 API smoke tests passed.
 ```
 
 ## Demo searches
@@ -144,7 +150,7 @@ Sprint 4 uses a lightweight local JSON store at:
 src/../data-store/oneop2-store.json
 ```
 
-The store is intentionally ignored by Git. It persists generated artifacts, write-back audit events, activity timeline entries, recommendation status overlays, mapping decisions, and settings between app restarts.
+The store is intentionally ignored by Git. It persists generated artifacts, write-back audit events, activity timeline entries, recommendation status overlays, mapping decisions, and settings between app restarts. Sprint 5 keeps `ONEOP2_STORE_PROVIDER=json` as the default and reserves `ONEOP2_STORE_PROVIDER=postgres` plus `ONEOP2_DATABASE_URL` for the future PostgreSQL provider.
 
 Reset local demo state:
 
@@ -158,9 +164,9 @@ Or call:
 POST /api/v1/admin/store/reset
 ```
 
-## Sprint 5 Candidates
+## Sprint 6 Candidates
 
-- PostgreSQL migration.
+- Activate PostgreSQL provider implementation.
 - Real PSA write-back for task and note creation.
 - Real PSA company/contact/ticket sync hardening.
 - Real RMM read integration spike.
@@ -173,3 +179,5 @@ POST /api/v1/admin/store/reset
 - Deployment packaging.
 - Production authentication.
 - Multi-tenant architecture design.
+
+
