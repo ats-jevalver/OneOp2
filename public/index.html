@@ -8,32 +8,19 @@
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <strong>OneOp2</strong>
-      <span>Account Intelligence MVP</span>
-    </div>
-    <nav>
-      <a href="/">Account Search</a>
-      <a href="/docs/">Docs</a>
-    </nav>
+    <div><strong>OneOp2</strong><span>Account Intelligence MVP</span></div>
+    <nav><a href="/">Account Search</a><a href="https://github.com/ats-jevalver/OneOp2" target="_blank" rel="noreferrer">GitHub</a></nav>
   </header>
-
   <main class="layout">
     <section class="search-panel">
       <h1>Account Command Center</h1>
-      <p>Search a seeded account to load the Sprint 1 account header and snapshot.</p>
-      <form id="searchForm">
-        <input id="query" placeholder="Search acme, greenfield, harbor, PSA-1001..." value="acme" />
-        <button type="submit">Search</button>
-      </form>
+      <p>Search a seeded account to load Sprint 2 intelligence.</p>
+      <form id="searchForm"><input id="query" placeholder="Search acme, greenfield, harbor, PSA-1001..." value="acme" /><button type="submit">Search</button></form>
       <div id="results" class="results"></div>
     </section>
-
-    <section id="commandCenter" class="command-center empty">
-      <p>Select an account to load its command center.</p>
-    </section>
+    <section id="commandCenter" class="command-center empty"><p>Select an account to load its command center.</p></section>
   </main>
-
+  <dialog id="evidenceDialog"><div class="dialog-header"><h2>Evidence</h2><button id="closeEvidence">Close</button></div><div id="evidenceBody"></div></dialog>
   <script src="/app.js"></script>
 </body>
 </html>
