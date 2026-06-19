@@ -77,6 +77,58 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 201);
     assert.equal(result.body.data.eventType, 'test_event');
 
-    console.log('All Sprint 2 API smoke tests passed.');
+        result = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/tasks/preview', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_qbr' })
+    });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.isValid, true);
+    assert.equal(result.body.data.payload.recommendationId, 'rec_acme_qbr');
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/tasks', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_qbr', confirmed: true })
+    });
+    assert.equal(result.response.status, 201);
+    assert.equal(result.body.data.status, 'created_stub');
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/write-back-audit-events');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.some(e => e.recommendationId === 'rec_acme_qbr'));
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/account-brief', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
+    assert.equal(result.response.status, 201);
+    const artifactId = result.body.data.generatedArtifactId;
+    assert.ok(result.body.data.body.includes('Evidence Appendix'));
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${artifactId}`);
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.generatedArtifactId, artifactId);
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${artifactId}/evidence`);
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.evidence.length >= 1);
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/generated-artifacts');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.some(a => a.generatedArtifactId === artifactId));
+
+    result = await request(baseUrl, '/api/v1/portfolio/accounts-at-risk');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.some(a => a.accountId === 'acct_northstar'));
+
+    result = await request(baseUrl, '/api/v1/portfolio/renewals?days=90');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.some(a => a.accountId === 'acct_greenfield'));
+    assert.ok(result.body.data.some(a => a.accountId === 'acct_acme'));
+
+    result = await request(baseUrl, '/api/v1/portfolio/expansion-candidates');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.some(a => a.accountId === 'acct_summit'));
+
+    result = await request(baseUrl, '/api/v1/admin/account-mapping/ext_riverbend_rmm_suggested/confirm', { method: 'POST' });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.matchStatus, 'confirmed');
+
+    console.log('All Sprint 3 API smoke tests passed.');
   } finally { server.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
+

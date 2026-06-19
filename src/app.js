@@ -4,7 +4,7 @@ const data = require('./data');
 const {
   users, integrations, accounts, accountOwners, aliases, externalIdentities, contacts, agreements, renewals,
   tickets, devices, deviceHealthSignals, securityFindings, securityCoverage, evidenceItems, accountHealthScores,
-  recommendations, productEvents
+  recommendations, generatedArtifacts, writeBackAuditEvents, activities, productEvents
 } = data;
 
 function envelope(data, meta = {}, errors = []) {
@@ -130,7 +130,7 @@ function commandCenter(accountId, dateRangePreset = 'last_90_days') {
   const renewal = renewals.find(r => r.accountId === accountId) || null;
   const health = latestHealth(accountId);
   const recs = forAccount(recommendations, accountId).filter(r => r.status === 'new').map(recommendationDto);
-  return { account, header: accountSummary(account), snapshot: { accountOwner: findOwner(accountId), primaryContact: primaryContact(accountId), agreement, monthlyRecurringRevenue: agreement?.monthlyRecurringRevenue || null, annualRecurringRevenue: agreement?.annualRecurringRevenue || null, openOpportunityCount: 0, lastQbrDate: null }, health, renewal, dataFreshness: latestFreshness(accountId), service: summarizeService(accountId), rmm: summarizeRmm(accountId), security: summarizeSecurity(accountId), brief: { bodyFormat: 'markdown', body: `${account.displayName} is marked ${health.scoreCategory.replace('_', ' ')}. ${health.summary}` }, risks: health.topDrivers || [], opportunities: recs.filter(r => r.recommendationType === 'open_opportunity'), recommendations: recs, timeline: [], warnings: accountWarnings(accountId), dateRangePreset };
+  return { account, header: accountSummary(account), snapshot: { accountOwner: findOwner(accountId), primaryContact: primaryContact(accountId), agreement, monthlyRecurringRevenue: agreement?.monthlyRecurringRevenue || null, annualRecurringRevenue: agreement?.annualRecurringRevenue || null, openOpportunityCount: 0, lastQbrDate: null }, health, renewal, dataFreshness: latestFreshness(accountId), service: summarizeService(accountId), rmm: summarizeRmm(accountId), security: summarizeSecurity(accountId), brief: { bodyFormat: 'markdown', body: `${account.displayName} is marked ${health.scoreCategory.replace('_', ' ')}. ${health.summary}` }, risks: health.topDrivers || [], opportunities: recs.filter(r => r.recommendationType === 'open_opportunity'), recommendations: recs, timeline: activityTimeline(accountId), warnings: accountWarnings(accountId), dateRangePreset };
 }
 
 function revenue(accountId) {
@@ -138,6 +138,60 @@ function revenue(accountId) {
 }
 
 function evidenceForIds(ids) { return ids.map(id => byId(evidenceItems, 'evidenceItemId', id)).filter(Boolean); }
+function newId(prefix) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
+function now() { return new Date().toISOString(); }
+function notBlank(value, fallback) { return value && String(value).trim() ? String(value).trim() : fallback; }
+function sourceRecordLabel(ev) { return `${ev.sourceSystemName}: ${ev.summary}`; }
+
+function buildTaskPreview(accountId, body = {}) {
+  const rec = byId(recommendations, 'recommendationId', body.recommendationId);
+  if (!rec || rec.accountId !== accountId) return { error: { code: 'validation_error', message: 'A recommendation for this account is required.', field: 'recommendationId' } };
+  const account = byId(accounts, 'accountId', accountId);
+  const evidence = evidenceForIds(rec.evidenceItemIds);
+  const title = notBlank(body.title, rec.title);
+  const ownerUserId = body.ownerUserId || rec.suggestedOwnerUserId;
+  const dueDate = body.dueDate || rec.suggestedDueDate;
+  const evidenceSummary = evidence.map(sourceRecordLabel);
+  const taskBody = notBlank(body.body, `${rec.reason}\n\nEvidence:\n${evidenceSummary.map(e => `- ${e}`).join('\n')}`);
+  return { payload: { accountId, accountName: account.displayName, recommendationId: rec.recommendationId, title, body: taskBody, ownerUserId, owner: userSummary(ownerUserId), dueDate, evidenceSummary, isStub: true }, warnings: ['Sprint 3 uses stubbed PSA write-back; no external PSA record is created.'] };
+}
+
+function createAccountBrief(accountId, requestedByUserId = null) {
+  const cc = commandCenter(accountId);
+  if (!cc) return null;
+  const evidenceIds = new Set([...(cc.health.evidenceItemIds || [])]);
+  for (const rec of cc.recommendations) for (const id of rec.evidenceItemIds || []) evidenceIds.add(id);
+  const evidence = evidenceForIds([...evidenceIds]);
+  const lines = [
+    `# ${cc.account.displayName} Account Brief`, '',
+    `Generated: ${now()}`, '',
+    `## Executive Summary`, cc.brief.body, '',
+    `## Health`, `- Category: ${cc.health.scoreCategory}`, `- Score: ${cc.health.scoreValue ?? 'N/A'}`, `- Confidence: ${cc.health.confidence}`, '',
+    `### Top Drivers`, ...(cc.health.topDrivers || []).map(d => `- ${d}`), '',
+    `## Service Summary`, `- Open tickets: ${cc.service.summary.openTicketCount}`, `- SLA risk tickets: ${cc.service.summary.slaRiskCount}`, `- Aging tickets: ${cc.service.summary.agingTicketCount}`, '',
+    `## RMM Summary`, `- Devices: ${cc.rmm.summary.deviceCount}`, `- Patch gaps: ${cc.rmm.summary.patchGapCount}`, `- End-of-life devices: ${cc.rmm.summary.endOfLifeDeviceCount}`, '',
+    `## Security Summary`, `- Open findings: ${cc.security.summary.openFindingCount}`, `- High findings: ${cc.security.summary.highFindingCount}`, `- Coverage gaps: ${cc.security.summary.coverageGapCount}`, '',
+    `## Recommendations`, ...(cc.recommendations.length ? cc.recommendations.map(r => `- ${r.title}: ${r.reason}`) : ['- No active recommendations.']), '',
+    `## Evidence Appendix`, ...(evidence.length ? evidence.map(ev => `- ${ev.sourceSystemName} / ${ev.sourceRecordType} / ${ev.sourceRecordId}: ${ev.summary}`) : ['- No evidence linked.'])
+  ];
+  const artifact = { generatedArtifactId: newId('artifact'), accountId, artifactType: 'account_brief', title: `${cc.account.displayName} Account Brief`, bodyFormat: 'markdown', body: lines.join('\n'), status: 'draft', createdByUserId: requestedByUserId, evidenceItemIds: [...evidenceIds], createdAt: now(), updatedAt: now() };
+  generatedArtifacts.push(artifact);
+  activities.push({ activityId: newId('activity'), accountId, activityType: 'generated_artifact', title: artifact.title, body: 'Generated account brief.', status: 'complete', generatedArtifactId: artifact.generatedArtifactId, createdAt: artifact.createdAt });
+  return artifact;
+}
+
+function activityTimeline(accountId) {
+  const artifactItems = generatedArtifacts.filter(a => a.accountId === accountId).map(a => ({ type: 'generated_artifact', timestamp: a.createdAt, title: a.title, generatedArtifactId: a.generatedArtifactId, status: a.status }));
+  const auditItems = writeBackAuditEvents.filter(e => e.accountId === accountId).map(e => ({ type: 'write_back_audit', timestamp: e.createdAt, title: `${e.actionType} ${e.status}`, writeBackAuditEventId: e.writeBackAuditEventId, externalId: e.externalId, recommendationId: e.recommendationId }));
+  return [...artifactItems, ...auditItems, ...activities.filter(a => a.accountId === accountId)].sort((a, b) => String(b.timestamp || b.createdAt).localeCompare(String(a.timestamp || a.createdAt)));
+}
+
+function portfolioRow(account) {
+  const health = latestHealth(account.accountId);
+  const topRecommendation = recommendations.find(r => r.accountId === account.accountId && r.status === 'new');
+  const renewal = renewals.find(r => r.accountId === account.accountId) || null;
+  return { accountId: account.accountId, displayName: account.displayName, owner: findOwner(account.accountId), healthCategory: health.scoreCategory, reason: health.summary, renewal, recommendedAction: topRecommendation?.title || null, recommendationId: topRecommendation?.recommendationId || null };
+}
 
 function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -237,6 +291,105 @@ async function handleApi(req, res, url) {
     return json(res, 200, envelope({ syncRunId: `sync_${Date.now()}`, status: 'succeeded', integrationConnectionId: integration.integrationConnectionId }));
   }
 
+  if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'tasks' && parts[6] === 'preview') {
+    if (!ensureAccount(res, parts[3])) return;
+    const body = await parseBody(req);
+    const preview = buildTaskPreview(parts[3], body);
+    if (preview.error) return json(res, 400, envelope(null, {}, [preview.error]));
+    return json(res, 200, envelope({ isValid: true, ...preview }));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'tasks' && !parts[6]) {
+    if (!ensureAccount(res, parts[3])) return;
+    const body = await parseBody(req);
+    if (body.confirmed !== true) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'confirmed must be true before creating a PSA task.', field: 'confirmed' }]));
+    const preview = buildTaskPreview(parts[3], body);
+    if (preview.error) return json(res, 400, envelope(null, {}, [preview.error]));
+    const externalId = newId('stub_psa_task');
+    const activity = { activityId: newId('activity'), accountId: parts[3], activityType: 'psa_task_stub', title: preview.payload.title, body: preview.payload.body, status: 'open', dueDate: preview.payload.dueDate, ownerUserId: preview.payload.ownerUserId, recommendationId: preview.payload.recommendationId, externalId, externalUrl: `stub://psa/tasks/${externalId}`, createdAt: now() };
+    activities.push(activity);
+    const rec = byId(recommendations, 'recommendationId', preview.payload.recommendationId);
+    if (rec) rec.status = 'converted_to_task';
+    const audit = { writeBackAuditEventId: newId('audit'), accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'succeeded', requestPayload: preview.payload, externalId, externalUrl: activity.externalUrl, recommendationId: preview.payload.recommendationId, createdAt: now() };
+    writeBackAuditEvents.push(audit);
+    return json(res, 201, envelope({ activityId: activity.activityId, externalId, externalUrl: activity.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId }));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'write-back-audit-events') {
+    if (!ensureAccount(res, parts[3])) return;
+    return json(res, 200, envelope(writeBackAuditEvents.filter(e => e.accountId === parts[3])));
+  }
+
+  if (req.method === 'PATCH' && parts[2] === 'recommendations') {
+    const rec = byId(recommendations, 'recommendationId', parts[3]);
+    if (!rec) return notFound(res, 'Recommendation not found.');
+    const body = await parseBody(req);
+    const allowed = ['new', 'accepted', 'dismissed', 'snoozed', 'converted_to_task', 'converted_to_opportunity', 'completed'];
+    if (!allowed.includes(body.status)) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Invalid recommendation status.', field: 'status' }]));
+    rec.status = body.status;
+    if (body.dismissalReason) rec.dismissalReason = body.dismissalReason;
+    if (body.snoozedUntil) rec.snoozedUntil = body.snoozedUntil;
+    rec.updatedAt = now();
+    return json(res, 200, envelope(recommendationDto(rec)));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'artifacts' && parts[5] === 'account-brief') {
+    if (!ensureAccount(res, parts[3])) return;
+    const artifact = createAccountBrief(parts[3]);
+    return json(res, 201, envelope(artifact));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'generated-artifacts' && parts.length === 4) {
+    const artifact = byId(generatedArtifacts, 'generatedArtifactId', parts[3]);
+    if (!artifact) return notFound(res, 'Generated artifact not found.');
+    return json(res, 200, envelope(artifact));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'generated-artifacts') {
+    if (!ensureAccount(res, parts[3])) return;
+    const artifactType = url.searchParams.get('artifactType');
+    let rows = generatedArtifacts.filter(a => a.accountId === parts[3]);
+    if (artifactType) rows = rows.filter(a => a.artifactType === artifactType);
+    return json(res, 200, envelope(rows));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'generated-artifacts' && parts[4] === 'evidence') {
+    const artifact = byId(generatedArtifacts, 'generatedArtifactId', parts[3]);
+    if (!artifact) return notFound(res, 'Generated artifact not found.');
+    return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, evidence: evidenceForIds(artifact.evidenceItemIds || []) }));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'activity') {
+    if (!ensureAccount(res, parts[3])) return;
+    return json(res, 200, envelope({ items: activityTimeline(parts[3]) }));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'confirm') {
+    const identity = byId(externalIdentities, 'accountExternalIdentityId', parts[4]);
+    if (!identity) return notFound(res, 'Account external identity not found.');
+    identity.matchStatus = 'confirmed'; identity.matchConfidence = 100; identity.matchedAt = now(); identity.matchedBy = 'runtime_admin';
+    return json(res, 200, envelope(identity));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'reject') {
+    const identity = byId(externalIdentities, 'accountExternalIdentityId', parts[4]);
+    if (!identity) return notFound(res, 'Account external identity not found.');
+    identity.matchStatus = 'rejected'; identity.matchedAt = now(); identity.matchedBy = 'runtime_admin';
+    return json(res, 200, envelope(identity));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/accounts-at-risk') {
+    return json(res, 200, envelope(accounts.filter(a => latestHealth(a.accountId).scoreCategory === 'at_risk').map(portfolioRow)));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/renewals') {
+    const days = Number(url.searchParams.get('days') || 90);
+    return json(res, 200, envelope(accounts.filter(a => { const h = latestHealth(a.accountId); const r = renewals.find(x => x.accountId === a.accountId); return h.scoreCategory === 'renewal_risk' || (r && r.daysUntilRenewal <= days); }).map(portfolioRow)));
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/expansion-candidates') {
+    return json(res, 200, envelope(accounts.filter(a => latestHealth(a.accountId).scoreCategory === 'expansion_candidate' || recommendations.some(r => r.accountId === a.accountId && r.recommendationType === 'open_opportunity')).map(portfolioRow)));
+  }
   if (req.method === 'POST' && url.pathname === '/api/v1/product-events') {
     const body = await parseBody(req);
     if (!body.eventType) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'eventType is required.', field: 'eventType' }]));
@@ -273,3 +426,6 @@ function createHandler() {
 }
 
 module.exports = { createHandler, searchAccounts, commandCenter, revenue, summarizeService, summarizeRmm, summarizeSecurity, latestHealth, envelope };
+
+
+

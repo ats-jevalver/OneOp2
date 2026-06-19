@@ -4,7 +4,9 @@ OneOp2 is a Buffaly-powered Account Intelligence MVP for sales and account manag
 
 Sprint 1 delivered the first visible product slice: search/select an account and render a basic Account Command Center.
 
-Sprint 2 adds the first account intelligence loop: seeded service, RMM, and security signals; explainable health scores; evidence-backed recommendations; and an evidence modal.
+Sprint 2 added the first account intelligence loop: seeded service, RMM, and security signals; explainable health scores; evidence-backed recommendations; and an evidence modal.
+
+Sprint 3 makes the intelligence actionable with stubbed PSA task creation, write-back audit history, generated account briefs, activity timeline, mapping admin actions, and portfolio views.
 
 ## Current Features
 
@@ -21,6 +23,12 @@ Sprint 2 adds the first account intelligence loop: seeded service, RMM, and secu
 - Recommendation list endpoint.
 - Recommendation and health-score evidence endpoints.
 - Account mapping suggestions endpoint stub.
+- PSA task preview and stub creation endpoints.
+- Write-back audit events endpoint.
+- Recommendation status update endpoint.
+- Account brief generation endpoint.
+- Generated artifact list/retrieve/evidence endpoints.
+- Portfolio At Risk, Renewal Risk, and Expansion Candidate endpoints.
 - Integration list and sync stub endpoint.
 - Product event tracking endpoint.
 - API smoke tests.
@@ -59,7 +67,7 @@ npm test
 Expected result:
 
 ```text
-All Sprint 2 API smoke tests passed.
+All Sprint 3 API smoke tests passed.
 ```
 
 ## Demo searches
@@ -86,6 +94,19 @@ GET  /api/v1/accounts/:accountId/recommendations?status=new&limit=5
 GET  /api/v1/recommendations/:recommendationId/evidence
 GET  /api/v1/account-health-scores/:accountHealthScoreId/evidence
 GET  /api/v1/admin/account-mapping/suggestions?matchStatus=needs_review
+POST /api/v1/admin/account-mapping/:accountExternalIdentityId/confirm
+POST /api/v1/admin/account-mapping/:accountExternalIdentityId/reject
+POST /api/v1/accounts/:accountId/psa/tasks/preview
+POST /api/v1/accounts/:accountId/psa/tasks
+GET  /api/v1/accounts/:accountId/write-back-audit-events
+PATCH /api/v1/recommendations/:recommendationId
+POST /api/v1/accounts/:accountId/artifacts/account-brief
+GET  /api/v1/generated-artifacts/:generatedArtifactId
+GET  /api/v1/accounts/:accountId/generated-artifacts
+GET  /api/v1/generated-artifacts/:generatedArtifactId/evidence
+GET  /api/v1/portfolio/accounts-at-risk
+GET  /api/v1/portfolio/renewals?days=90
+GET  /api/v1/portfolio/expansion-candidates
 GET  /api/v1/admin/integrations
 POST /api/v1/admin/integrations/:integrationConnectionId/sync
 POST /api/v1/product-events
@@ -100,13 +121,14 @@ src/       Seed data, API handlers, server
 tests/     API contract smoke tests
 ```
 
-## Sprint 3 Candidates
+## Sprint 4 Candidates
 
-- PSA write-back preview and create task.
-- PSA note creation from account brief.
-- First generated account brief artifact.
-- Account mapping admin queue UI.
-- Real PSA ticket sync.
-- Lightweight persistence/database layer.
-- Portfolio views for At Risk, Renewal Risk, and Expansion Candidate accounts.
-- Buffaly assistant suggested prompts.
+- Add lightweight database persistence.
+- Real PSA write-back integration using configured field mapping.
+- PSA note creation from generated account brief.
+- Real PSA ticket/company/contact sync.
+- Generated QBR draft.
+- Customer email draft generation.
+- Buffaly assistant panel with suggested prompts.
+- Portfolio filters by owner/date range.
+- Authentication/RBAC hardening.

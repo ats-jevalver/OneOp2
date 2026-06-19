@@ -137,6 +137,9 @@ const recommendations = [
   { recommendationId: 'rec_summit_security_opp', accountId: 'acct_summit', recommendationType: 'open_opportunity', title: 'Open security services expansion opportunity', reason: 'Summit is stable but lacks MDR coverage in the current account posture.', priority: 'medium', status: 'new', suggestedOwnerUserId: 'usr_sales_marcus', suggestedDueDate: '2026-07-01', confidence: 'medium', evidenceItemIds: ['ev_summit_mdr_gap'] }
 ];
 
+const generatedArtifacts = [];
+const writeBackAuditEvents = [];
+const activities = [];
 const productEvents = [];
 
 module.exports = {
@@ -157,5 +160,9 @@ module.exports = {
   evidenceItems,
   accountHealthScores,
   recommendations,
+  generatedArtifacts,
+  writeBackAuditEvents,
+  activities,
   productEvents
 };
+
