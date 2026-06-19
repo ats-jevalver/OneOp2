@@ -1,11 +1,12 @@
 const assert = require('assert');
 const http = require('http');
-const { createHandler } = require('../src/app');
+const { createHandler, ensureStore } = require('../src/app');
 
 function startServer() { return new Promise(resolve => { const server = http.createServer(createHandler()); server.listen(0, () => resolve(server)); }); }
 async function request(baseUrl, path, options = {}) { const response = await fetch(`${baseUrl}${path}`, options); const body = await response.json(); return { response, body }; }
 
 (async () => {
+  await ensureStore();
   const server = await startServer();
   const { port } = server.address();
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -188,3 +189,4 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     console.log('All Sprint 5 API smoke tests passed.');
   } finally { server.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
+

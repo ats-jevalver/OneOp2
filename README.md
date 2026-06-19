@@ -10,7 +10,7 @@ Sprint 3 made the intelligence actionable with stubbed PSA task creation, write-
 
 Sprint 4 added durable local JSON persistence, a repository-style store boundary, a mock PSA adapter, persisted runtime workflow state, PSA note stubs, QBR/email artifacts, portfolio filters, and deterministic assistant prompts.
 
-Sprint 5 starts the integration-ready foundation: persistence provider diagnostics, PostgreSQL starter schema, hardened PSA adapter contracts, safer write-back audits, sync preview counts, integration capability status, artifact export, and email handoff guardrails.
+Sprint 5 starts the integration-ready foundation: persistence provider diagnostics, PostgreSQL starter schema, hardened PSA adapter contracts, safer write-back audits, sync preview counts, integration capability status, artifact export, and email handoff guardrails. Sprint 6 begins by activating a PostgreSQL-backed runtime-state provider behind the existing store interface.
 
 ## Current Features
 
@@ -163,6 +163,32 @@ Or call:
 ```text
 POST /api/v1/admin/store/reset
 ```
+
+
+## PostgreSQL provider
+
+JSON remains the default provider for local demos:
+
+```bash
+npm start
+```
+
+To run against PostgreSQL, create the database, apply the schema, and start with provider settings:
+
+```bash
+psql "$ONEOP2_DATABASE_URL" -f db/schema.sql
+ONEOP2_STORE_PROVIDER=postgres ONEOP2_DATABASE_URL="postgres://user:password@localhost:5432/oneop2" npm start
+```
+
+PowerShell:
+
+```powershell
+$env:ONEOP2_STORE_PROVIDER="postgres"
+$env:ONEOP2_DATABASE_URL="postgres://user:password@localhost:5432/oneop2"
+npm start
+```
+
+The PostgreSQL provider stores OneOp2 runtime workflow state in `app_settings` under key `oneop2_runtime_state`. Static seed data still comes from `src/data.js`; future work can migrate static/reference entities into normalized tables.
 
 ## Sprint 6 Candidates
 

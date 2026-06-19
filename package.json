@@ -6,9 +6,12 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node tests/api.test.js"
+    "test": "node tests/api.test.js && node tests/store-provider.test.js"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
   }
 }

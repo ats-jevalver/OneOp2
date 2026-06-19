@@ -3,7 +3,7 @@ const path = require('path');
 const data = require('./data');
 const store = require('./repositories/store');
 const { getPsaAdapter } = require('./integrations/psaAdapter');
-store.ensureStore();
+
 const {
   users, integrations, accounts, accountOwners, aliases, externalIdentities, contacts, agreements, renewals,
   tickets, devices, deviceHealthSignals, securityFindings, securityCoverage, evidenceItems, accountHealthScores,
@@ -470,7 +470,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'POST' && url.pathname === '/api/v1/admin/store/reset') {
-    store.resetStore();
+    await store.resetStore();
     return json(res, 200, envelope({ status: 'reset', storePath: store.storePath }));
   }
 
@@ -586,5 +586,5 @@ function createHandler() {
   };
 }
 
-module.exports = { createHandler, searchAccounts, commandCenter, revenue, summarizeService, summarizeRmm, summarizeSecurity, latestHealth, envelope };
+module.exports = { createHandler, searchAccounts, commandCenter, revenue, summarizeService, summarizeRmm, summarizeSecurity, latestHealth, envelope, ensureStore: store.ensureStore };
 
