@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node tests/api.test.js && node tests/store-provider.test.js"
+    "test": "node tests/api.test.js && node tests/store-provider.test.js",
+    "test:postgres": "node tests/postgres-read.test.js"
   },
   "engines": {
     "node": ">=20"

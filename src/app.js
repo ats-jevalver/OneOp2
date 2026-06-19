@@ -1,21 +1,35 @@
 const fs = require('fs');
 const path = require('path');
-const data = require('./data');
 const store = require('./repositories/store');
+const dataRepository = require('./repositories/dataRepository');
 const { getPsaAdapter } = require('./integrations/psaAdapter');
 
-const {
-  users, integrations, accounts, accountOwners, aliases, externalIdentities, contacts, agreements, renewals,
-  tickets, devices, deviceHealthSignals, securityFindings, securityCoverage, evidenceItems, accountHealthScores,
-  recommendations, generatedArtifacts, writeBackAuditEvents, activities, productEvents
-} = data;
+const productEvents = [];
+function data() { return dataRepository.getData(); }
+function users() { return data().users; }
+function integrations() { return data().integrations; }
+function accounts() { return data().accounts; }
+function accountOwners() { return data().accountOwners; }
+function aliases() { return data().aliases; }
+function externalIdentities() { return data().externalIdentities; }
+function contacts() { return data().contacts; }
+function agreements() { return data().agreements; }
+function renewals() { return data().renewals; }
+function tickets() { return data().tickets; }
+function devices() { return data().devices; }
+function deviceHealthSignals() { return data().deviceHealthSignals; }
+function securityFindings() { return data().securityFindings; }
+function securityCoverage() { return data().securityCoverage; }
+function evidenceItems() { return data().evidenceItems; }
+function accountHealthScores() { return data().accountHealthScores; }
+function recommendations() { return data().recommendations; }
 
 function envelope(data, meta = {}, errors = []) {
   return { data, meta: { requestId: `req_${Date.now()}`, timestamp: new Date().toISOString(), ...meta }, errors };
 }
 
 function byId(list, key, value) { return list.find(item => item[key] === value) || null; }
-function currentUser() { return byId(users, 'userId', store.getState().settings.currentUserId) || byId(users, 'userId', 'usr_am_jane'); }
+function currentUser() { return byId(users(), 'userId', store.getState().settings.currentUserId) || byId(users(), 'userId', 'usr_am_jane'); }
 function canWriteBack() { return ['admin','account_manager','sales_rep','service_manager','security_lead','executive'].includes(currentUser()?.role); }
 function canAdmin() { return currentUser()?.role === 'admin'; }
 function forAccount(list, accountId) { return list.filter(item => item.accountId === accountId); }
@@ -24,45 +38,45 @@ function forbidden(res, message = 'Current user is not authorized for this actio
 function requireAdmin(res) { if (!canAdmin()) { forbidden(res, 'Admin role is required for this endpoint.'); return false; } return true; }
 function requireWriteBack(res) { if (!canWriteBack()) { forbidden(res, 'Write-back permission is required for this endpoint.'); return false; } return true; }
 function psaCompanyIdentity(accountId) {
-  return externalIdentities.find(e => e.accountId === accountId && e.sourceSystemType === 'psa' && (store.getMappingStatus(e.accountExternalIdentityId)?.matchStatus || e.matchStatus) === 'confirmed') || null;
+  return externalIdentities().find(e => e.accountId === accountId && e.sourceSystemType === 'psa' && (store.getMappingStatus(e.accountExternalIdentityId)?.matchStatus || e.matchStatus) === 'confirmed') || null;
 }
 
 function findOwner(accountId) {
-  const owner = accountOwners.find(o => o.accountId === accountId && o.role === 'account_manager' && o.isPrimary) || accountOwners.find(o => o.accountId === accountId);
+  const owner = accountOwners().find(o => o.accountId === accountId && o.role === 'account_manager' && o.isPrimary) || accountOwners().find(o => o.accountId === accountId);
   if (!owner) return null;
-  const user = byId(users, 'userId', owner.userId);
+  const user = byId(users(), 'userId', owner.userId);
   return user ? { userId: user.userId, displayName: user.displayName, role: owner.role } : null;
 }
 
 function userSummary(userId) {
-  const user = byId(users, 'userId', userId);
+  const user = byId(users(), 'userId', userId);
   return user ? { userId: user.userId, displayName: user.displayName, role: user.role } : null;
 }
 
 function primaryContact(accountId) {
-  return contacts.find(c => c.accountId === accountId && c.isPrimaryContact) || contacts.find(c => c.accountId === accountId) || null;
+  return contacts().find(c => c.accountId === accountId && c.isPrimaryContact) || contacts().find(c => c.accountId === accountId) || null;
 }
 
 function accountWarnings(accountId) {
   const warnings = [];
-  const needsReview = externalIdentities.filter(e => e.accountId === accountId && (store.getMappingStatus(e.accountExternalIdentityId)?.matchStatus || e.matchStatus) === 'needs_review');
+  const needsReview = externalIdentities().filter(e => e.accountId === accountId && (store.getMappingStatus(e.accountExternalIdentityId)?.matchStatus || e.matchStatus) === 'needs_review');
   for (const item of needsReview) warnings.push({ type: 'mapping_review', message: `${item.sourceSystemName} identity "${item.externalDisplayName}" needs mapping review.` });
   if (accountId === 'acct_harbor') warnings.push({ type: 'data_stale', message: 'Microsoft 365/security data is stale. Last successful sync was 2026-06-09.' });
   return warnings;
 }
 
 function latestFreshness(accountId) {
-  const identities = externalIdentities.filter(e => e.accountId === accountId);
-  return integrations.map(integration => {
+  const identities = externalIdentities().filter(e => e.accountId === accountId);
+  return integrations().map(integration => {
     const linked = identities.some(e => e.integrationConnectionId === integration.integrationConnectionId);
     return { systemType: integration.systemType, systemName: integration.systemName, status: linked ? integration.status : 'not_mapped', lastSuccessfulSyncAt: linked ? integration.lastSuccessfulSyncAt : null, message: linked ? integration.lastErrorMessage : 'No confirmed account mapping for this source.' };
   });
 }
 
 function latestHealth(accountId) {
-  const health = accountHealthScores.find(h => h.accountId === accountId);
+  const health = accountHealthScores().find(h => h.accountId === accountId);
   if (health) return { ...health, evidenceCount: health.evidenceItemIds.length };
-  const account = byId(accounts, 'accountId', accountId);
+  const account = byId(accounts(), 'accountId', accountId);
   return account ? { accountHealthScoreId: null, accountId, scoreCategory: account.healthCategory, scoreValue: null, summary: account.healthSummary, confidence: 'placeholder', topDrivers: [], evidenceItemIds: [], evidenceCount: 0 } : null;
 }
 
@@ -78,8 +92,8 @@ function recommendationDto(rec) {
 }
 
 function accountSummary(account) {
-  const agreement = agreements.find(a => a.accountId === account.accountId) || null;
-  const renewal = renewals.find(r => r.accountId === account.accountId) || null;
+  const agreement = agreements().find(a => a.accountId === account.accountId) || null;
+  const renewal = renewals().find(r => r.accountId === account.accountId) || null;
   const health = latestHealth(account.accountId);
   return {
     accountId: account.accountId,
@@ -95,7 +109,7 @@ function accountSummary(account) {
 }
 
 function summarizeService(accountId) {
-  const rows = forAccount(tickets, accountId);
+  const rows = forAccount(tickets(), accountId);
   const open = rows.filter(t => t.status !== 'closed');
   const topCategories = Object.entries(rows.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + 1; return acc; }, {})).map(([category, count]) => ({ category, count }));
   return {
@@ -105,8 +119,8 @@ function summarizeService(accountId) {
 }
 
 function summarizeRmm(accountId) {
-  const accountDevices = forAccount(devices, accountId);
-  const signals = forAccount(deviceHealthSignals, accountId);
+  const accountDevices = forAccount(devices(), accountId);
+  const signals = forAccount(deviceHealthSignals(), accountId);
   return {
     summary: { deviceCount: accountDevices.length, serverCount: accountDevices.filter(d => d.deviceType === 'server').length, workstationCount: accountDevices.filter(d => d.deviceType === 'workstation').length, offlineDeviceCount: accountDevices.filter(d => d.status === 'offline').length, patchGapCount: accountDevices.filter(d => ['behind', 'critical_missing'].includes(d.patchStatus)).length, endOfLifeDeviceCount: accountDevices.filter(d => d.isEndOfLife).length },
     devices: accountDevices,
@@ -115,8 +129,8 @@ function summarizeRmm(accountId) {
 }
 
 function summarizeSecurity(accountId) {
-  const findings = forAccount(securityFindings, accountId);
-  const coverage = forAccount(securityCoverage, accountId);
+  const findings = forAccount(securityFindings(), accountId);
+  const coverage = forAccount(securityCoverage(), accountId);
   return {
     summary: { openFindingCount: findings.filter(f => f.status === 'open').length, criticalFindingCount: findings.filter(f => f.severity === 'critical').length, highFindingCount: findings.filter(f => f.severity === 'high').length, coverageGapCount: coverage.filter(c => ['missing', 'partial'].includes(c.coverageStatus)).length },
     findings,
@@ -129,41 +143,41 @@ function searchAccounts(query, page = 1, pageSize = 10) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return { results: [], totalCount: 0 };
   const matchedIds = new Set();
-  for (const account of accounts) if ([account.displayName, account.legalName, account.shortName, account.primaryDomain, account.industry].filter(Boolean).some(f => f.toLowerCase().includes(q))) matchedIds.add(account.accountId);
-  for (const alias of aliases) if (alias.aliasValue.toLowerCase().includes(q)) matchedIds.add(alias.accountId);
-  for (const contact of contacts) if ([contact.fullName, contact.email].filter(Boolean).some(f => f.toLowerCase().includes(q))) matchedIds.add(contact.accountId);
-  for (const external of externalIdentities) if ([external.externalId, external.externalDisplayName, external.externalDomain].filter(Boolean).some(f => f.toLowerCase().includes(q))) matchedIds.add(external.accountId);
-  const all = accounts.filter(a => matchedIds.has(a.accountId)).map(accountSummary);
+  for (const account of accounts()) if ([account.displayName, account.legalName, account.shortName, account.primaryDomain, account.industry].filter(Boolean).some(f => f.toLowerCase().includes(q))) matchedIds.add(account.accountId);
+  for (const alias of aliases()) if (alias.aliasValue.toLowerCase().includes(q)) matchedIds.add(alias.accountId);
+  for (const contact of contacts()) if ([contact.fullName, contact.email].filter(Boolean).some(f => f.toLowerCase().includes(q))) matchedIds.add(contact.accountId);
+  for (const external of externalIdentities()) if ([external.externalId, external.externalDisplayName, external.externalDomain].filter(Boolean).some(f => f.toLowerCase().includes(q))) matchedIds.add(external.accountId);
+  const all = accounts().filter(a => matchedIds.has(a.accountId)).map(accountSummary);
   const start = (page - 1) * pageSize;
   return { results: all.slice(start, start + pageSize), totalCount: all.length };
 }
 
 function commandCenter(accountId, dateRangePreset = 'last_90_days') {
-  const account = byId(accounts, 'accountId', accountId);
+  const account = byId(accounts(), 'accountId', accountId);
   if (!account) return null;
-  const agreement = agreements.find(a => a.accountId === accountId) || null;
-  const renewal = renewals.find(r => r.accountId === accountId) || null;
+  const agreement = agreements().find(a => a.accountId === accountId) || null;
+  const renewal = renewals().find(r => r.accountId === accountId) || null;
   const health = latestHealth(accountId);
-  const recs = forAccount(recommendations, accountId).filter(r => r.status === 'new').map(recommendationDto);
+  const recs = forAccount(recommendations(), accountId).filter(r => r.status === 'new').map(recommendationDto);
   return { account, header: accountSummary(account), snapshot: { accountOwner: findOwner(accountId), primaryContact: primaryContact(accountId), agreement, monthlyRecurringRevenue: agreement?.monthlyRecurringRevenue || null, annualRecurringRevenue: agreement?.annualRecurringRevenue || null, openOpportunityCount: 0, lastQbrDate: null }, health, renewal, dataFreshness: latestFreshness(accountId), service: summarizeService(accountId), rmm: summarizeRmm(accountId), security: summarizeSecurity(accountId), brief: { bodyFormat: 'markdown', body: `${account.displayName} is marked ${health.scoreCategory.replace('_', ' ')}. ${health.summary}` }, risks: health.topDrivers || [], opportunities: recs.filter(r => r.recommendationType === 'open_opportunity'), recommendations: recs, timeline: activityTimeline(accountId), warnings: accountWarnings(accountId), dateRangePreset };
 }
 
 function revenue(accountId) {
-  return { summary: { monthlyRecurringRevenue: forAccount(agreements, accountId).reduce((sum, a) => sum + (a.monthlyRecurringRevenue || 0), 0), annualRecurringRevenue: forAccount(agreements, accountId).reduce((sum, a) => sum + (a.annualRecurringRevenue || 0), 0), nextRenewalDate: renewals.find(r => r.accountId === accountId)?.renewalDate || null, openOpportunityCount: 0 }, agreements: forAccount(agreements, accountId), renewals: forAccount(renewals, accountId), opportunities: [] };
+  return { summary: { monthlyRecurringRevenue: forAccount(agreements(), accountId).reduce((sum, a) => sum + (a.monthlyRecurringRevenue || 0), 0), annualRecurringRevenue: forAccount(agreements(), accountId).reduce((sum, a) => sum + (a.annualRecurringRevenue || 0), 0), nextRenewalDate: renewals().find(r => r.accountId === accountId)?.renewalDate || null, openOpportunityCount: 0 }, agreements: forAccount(agreements(), accountId), renewals: forAccount(renewals(), accountId), opportunities: [] };
 }
 
-function evidenceForIds(ids) { return ids.map(id => byId(evidenceItems, 'evidenceItemId', id)).filter(Boolean); }
+function evidenceForIds(ids) { return ids.map(id => byId(evidenceItems(), 'evidenceItemId', id)).filter(Boolean); }
 function newId(prefix) { return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; }
 function now() { return new Date().toISOString(); }
 function notBlank(value, fallback) { return value && String(value).trim() ? String(value).trim() : fallback; }
 function sourceRecordLabel(ev) { return `${ev.sourceSystemName}: ${ev.summary}`; }
 
 function buildTaskPreview(accountId, body = {}) {
-  const rec = byId(recommendations, 'recommendationId', body.recommendationId);
+  const rec = byId(recommendations(), 'recommendationId', body.recommendationId);
   if (!rec || rec.accountId !== accountId) return { error: { code: 'validation_error', message: 'A recommendation for this account is required.', field: 'recommendationId' } };
   const psaIdentity = psaCompanyIdentity(accountId);
   if (!psaIdentity) return { error: { code: 'mapping_required', message: 'A confirmed PSA company mapping is required before PSA write-back.', field: 'accountId' } };
-  const account = byId(accounts, 'accountId', accountId);
+  const account = byId(accounts(), 'accountId', accountId);
   const evidence = evidenceForIds(rec.evidenceItemIds);
   const title = notBlank(body.title, rec.title);
   const ownerUserId = body.ownerUserId || rec.suggestedOwnerUserId;
@@ -182,7 +196,7 @@ function buildSyncSummary(integration) {
 }
 
 function integrationCapabilitySummary() {
-  return integrations.map(integration => ({
+  return integrations().map(integration => ({
     integrationConnectionId: integration.integrationConnectionId,
     systemType: integration.systemType,
     systemName: integration.systemName,
@@ -214,10 +228,10 @@ function createAccountBrief(accountId, requestedByUserId = null) {
     `## Executive Summary`, cc.brief.body, '',
     `## Health`, `- Category: ${cc.health.scoreCategory}`, `- Score: ${cc.health.scoreValue ?? 'N/A'}`, `- Confidence: ${cc.health.confidence}`, '',
     `### Top Drivers`, ...(cc.health.topDrivers || []).map(d => `- ${d}`), '',
-    `## Service Summary`, `- Open tickets: ${cc.service.summary.openTicketCount}`, `- SLA risk tickets: ${cc.service.summary.slaRiskCount}`, `- Aging tickets: ${cc.service.summary.agingTicketCount}`, '',
-    `## RMM Summary`, `- Devices: ${cc.rmm.summary.deviceCount}`, `- Patch gaps: ${cc.rmm.summary.patchGapCount}`, `- End-of-life devices: ${cc.rmm.summary.endOfLifeDeviceCount}`, '',
+    `## Service Summary`, `- Open tickets: ${cc.service.summary.openTicketCount}`, `- SLA risk tickets: ${cc.service.summary.slaRiskCount}`, `- Aging tickets(): ${cc.service.summary.agingTicketCount}`, '',
+    `## RMM Summary`, `- Devices: ${cc.rmm.summary.deviceCount}`, `- Patch gaps: ${cc.rmm.summary.patchGapCount}`, `- End-of-life devices(): ${cc.rmm.summary.endOfLifeDeviceCount}`, '',
     `## Security Summary`, `- Open findings: ${cc.security.summary.openFindingCount}`, `- High findings: ${cc.security.summary.highFindingCount}`, `- Coverage gaps: ${cc.security.summary.coverageGapCount}`, '',
-    `## Recommendations`, ...(cc.recommendations.length ? cc.recommendations.map(r => `- ${r.title}: ${r.reason}`) : ['- No active recommendations.']), '',
+    `## Recommendations`, ...(cc.recommendations.length ? cc.recommendations.map(r => `- ${r.title}: ${r.reason}`) : ['- No active recommendations().']), '',
     `## Evidence Appendix`, ...(evidence.length ? evidence.map(ev => `- ${ev.sourceSystemName} / ${ev.sourceRecordType} / ${ev.sourceRecordId}: ${ev.summary}`) : ['- No evidence linked.'])
   ];
   const artifact = { generatedArtifactId: newId('artifact'), accountId, artifactType: 'account_brief', title: `${cc.account.displayName} Account Brief`, bodyFormat: 'markdown', body: lines.join('\n'), status: 'draft', createdByUserId: requestedByUserId, evidenceItemIds: [...evidenceIds], createdAt: now(), updatedAt: now() };
@@ -235,8 +249,8 @@ function activityTimeline(accountId) {
 
 function portfolioRow(account) {
   const health = latestHealth(account.accountId);
-  const topRecommendation = recommendations.find(r => r.accountId === account.accountId && r.status === 'new');
-  const renewal = renewals.find(r => r.accountId === account.accountId) || null;
+  const topRecommendation = recommendations().find(r => r.accountId === account.accountId && r.status === 'new');
+  const renewal = renewals().find(r => r.accountId === account.accountId) || null;
   return { accountId: account.accountId, displayName: account.displayName, owner: findOwner(account.accountId), healthCategory: health.scoreCategory, reason: health.summary, renewal, recommendedAction: topRecommendation?.title || null, recommendationId: topRecommendation?.recommendationId || null };
 }
 
@@ -257,7 +271,7 @@ function parseBody(req) {
 }
 
 function notFound(res, message = 'Endpoint not found.') { return json(res, 404, envelope(null, {}, [{ code: 'not_found', message }])); }
-function ensureAccount(res, accountId) { const account = byId(accounts, 'accountId', accountId); if (!account) notFound(res, 'Account not found.'); return account; }
+function ensureAccount(res, accountId) { const account = byId(accounts(), 'accountId', accountId); if (!account) notFound(res, 'Account not found.'); return account; }
 
 async function handleApi(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean);
@@ -304,30 +318,30 @@ async function handleApi(req, res, url) {
     if (!ensureAccount(res, parts[3])) return;
     const status = url.searchParams.get('status');
     const limit = Number(url.searchParams.get('limit') || 50);
-    let rows = forAccount(recommendations, parts[3]);
+    let rows = forAccount(recommendations(), parts[3]);
     if (status) rows = rows.filter(r => r.status === status);
     return json(res, 200, envelope(rows.slice(0, limit).map(recommendationDto)));
   }
 
   if (req.method === 'GET' && parts[2] === 'recommendations' && parts[4] === 'evidence') {
-    const rec = byId(recommendations, 'recommendationId', parts[3]);
+    const rec = byId(recommendations(), 'recommendationId', parts[3]);
     if (!rec) return notFound(res, 'Recommendation not found.');
     return json(res, 200, envelope({ recommendationId: rec.recommendationId, summary: rec.reason, evidence: evidenceForIds(rec.evidenceItemIds) }));
   }
 
   if (req.method === 'GET' && parts[2] === 'account-health-scores' && parts[4] === 'evidence') {
-    const score = byId(accountHealthScores, 'accountHealthScoreId', parts[3]);
+    const score = byId(accountHealthScores(), 'accountHealthScoreId', parts[3]);
     if (!score) return notFound(res, 'Account health score not found.');
     return json(res, 200, envelope({ accountHealthScoreId: score.accountHealthScoreId, summary: score.summary, evidence: evidenceForIds(score.evidenceItemIds) }));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/admin/account-mapping/suggestions') {
     const matchStatus = url.searchParams.get('matchStatus') || 'needs_review';
-    const rows = externalIdentities.map(e => ({ ...e, ...(store.getMappingStatus(e.accountExternalIdentityId) || {}) })).filter(e => e.matchStatus === matchStatus).map(e => ({ ...e, account: accountSummary(byId(accounts, 'accountId', e.accountId)) }));
+    const rows = externalIdentities().map(e => ({ ...e, ...(store.getMappingStatus(e.accountExternalIdentityId) || {}) })).filter(e => e.matchStatus === matchStatus).map(e => ({ ...e, account: accountSummary(byId(accounts(), 'accountId', e.accountId)) }));
     return json(res, 200, envelope(rows));
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/v1/admin/integrations') return json(res, 200, envelope(integrations));
+  if (req.method === 'GET' && url.pathname === '/api/v1/admin/integrations') return json(res, 200, envelope(integrations()));
 
   if (req.method === 'GET' && url.pathname === '/api/v1/integrations/status') {
     return json(res, 200, envelope({ store: store.providerInfo(), integrations: integrationCapabilitySummary() }));
@@ -335,7 +349,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'sync') {
     if (!requireAdmin(res)) return;
-    const integration = byId(integrations, 'integrationConnectionId', parts[4]);
+    const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
     if (!integration) return notFound(res, 'Integration not found.');
     integration.lastSuccessfulSyncAt = new Date().toISOString();
     integration.status = 'connected';
@@ -378,7 +392,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'PATCH' && parts[2] === 'recommendations') {
-    const rec = byId(recommendations, 'recommendationId', parts[3]);
+    const rec = byId(recommendations(), 'recommendationId', parts[3]);
     if (!rec) return notFound(res, 'Recommendation not found.');
     const body = await parseBody(req);
     const allowed = ['new', 'accepted', 'dismissed', 'snoozed', 'converted_to_task', 'converted_to_opportunity', 'completed'];
@@ -420,7 +434,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'confirm') {
     if (!requireAdmin(res)) return;
-    const identity = byId(externalIdentities, 'accountExternalIdentityId', parts[4]);
+    const identity = byId(externalIdentities(), 'accountExternalIdentityId', parts[4]);
     if (!identity) return notFound(res, 'Account external identity not found.');
     const overlay = store.setMappingStatus(identity.accountExternalIdentityId, { matchStatus: 'confirmed', matchConfidence: 100, matchedAt: now(), matchedBy: 'runtime_admin' });
     return json(res, 200, envelope({ ...identity, ...overlay }));
@@ -428,7 +442,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'reject') {
     if (!requireAdmin(res)) return;
-    const identity = byId(externalIdentities, 'accountExternalIdentityId', parts[4]);
+    const identity = byId(externalIdentities(), 'accountExternalIdentityId', parts[4]);
     if (!identity) return notFound(res, 'Account external identity not found.');
     const overlay = store.setMappingStatus(identity.accountExternalIdentityId, { matchStatus: 'rejected', matchedAt: now(), matchedBy: 'runtime_admin' });
     return json(res, 200, envelope({ ...identity, ...overlay }));
@@ -436,7 +450,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/accounts-at-risk') {
     const owner = url.searchParams.get('ownerUserId');
-    let rows = accounts.filter(a => latestHealth(a.accountId).scoreCategory === 'at_risk').map(portfolioRow);
+    let rows = accounts().filter(a => latestHealth(a.accountId).scoreCategory === 'at_risk').map(portfolioRow);
     if (owner) rows = rows.filter(r => r.owner?.userId === owner);
     return json(res, 200, envelope(rows));
   }
@@ -444,14 +458,14 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/renewals') {
     const days = Number(url.searchParams.get('days') || 90);
     const owner = url.searchParams.get('ownerUserId');
-    let rows = accounts.filter(a => { const h = latestHealth(a.accountId); const r = renewals.find(x => x.accountId === a.accountId); return h.scoreCategory === 'renewal_risk' || (r && r.daysUntilRenewal <= days); }).map(portfolioRow);
+    let rows = accounts().filter(a => { const h = latestHealth(a.accountId); const r = renewals().find(x => x.accountId === a.accountId); return h.scoreCategory === 'renewal_risk' || (r && r.daysUntilRenewal <= days); }).map(portfolioRow);
     if (owner) rows = rows.filter(r => r.owner?.userId === owner);
     return json(res, 200, envelope(rows));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/portfolio/expansion-candidates') {
     const owner = url.searchParams.get('ownerUserId');
-    let rows = accounts.filter(a => latestHealth(a.accountId).scoreCategory === 'expansion_candidate' || recommendations.some(r => r.accountId === a.accountId && r.recommendationType === 'open_opportunity')).map(portfolioRow);
+    let rows = accounts().filter(a => latestHealth(a.accountId).scoreCategory === 'expansion_candidate' || recommendations().some(r => r.accountId === a.accountId && r.recommendationType === 'open_opportunity')).map(portfolioRow);
     if (owner) rows = rows.filter(r => r.owner?.userId === owner);
     return json(res, 200, envelope(rows));
   }
@@ -546,9 +560,9 @@ async function handleApi(req, res, url) {
     const cc = commandCenter(parts[3]);
     const prompt = String(body.message || '').toLowerCase();
     let message = `${cc.account.displayName}: ${cc.health.summary}`;
-    if (prompt.includes('call')) message = `Call prep: ${cc.brief.body} Top actions: ${cc.recommendations.map(r => r.title).join('; ') || 'No active recommendations.'}`;
+    if (prompt.includes('call')) message = `Call prep: ${cc.brief.body} Top actions: ${cc.recommendations.map(r => r.title).join('; ') || 'No active recommendations().'}`;
     if (prompt.includes('why')) message = `Health rationale: ${(cc.health.topDrivers || []).join('; ') || cc.health.summary}`;
-    if (prompt.includes('next')) message = `Recommended next actions: ${cc.recommendations.map(r => `${r.title} (${r.priority})`).join('; ') || 'No active recommendations.'}`;
+    if (prompt.includes('next')) message = `Recommended next actions: ${cc.recommendations.map(r => `${r.title} (${r.priority})`).join('; ') || 'No active recommendations().'}`;
     return json(res, 200, envelope({ message, evidence: evidenceForIds(cc.health.evidenceItemIds || []), suggestedActions: ['Generate Account Brief', 'Create PSA Task Stub', 'Generate QBR Draft'] }));
   }
   if (req.method === 'POST' && url.pathname === '/api/v1/product-events') {
@@ -586,5 +600,10 @@ function createHandler() {
   };
 }
 
-module.exports = { createHandler, searchAccounts, commandCenter, revenue, summarizeService, summarizeRmm, summarizeSecurity, latestHealth, envelope, ensureStore: store.ensureStore };
+async function initializeApp() {
+  await store.ensureStore();
+  await dataRepository.initialize();
+}
+
+module.exports = { createHandler, searchAccounts, commandCenter, revenue, summarizeService, summarizeRmm, summarizeSecurity, latestHealth, envelope, ensureStore: initializeApp };
 
