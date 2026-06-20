@@ -151,6 +151,14 @@ const accountPlanStakeholders = [
   { accountPlanStakeholderId: 'stake_acme_tina', accountPlanId: 'plan_acme_2026', contactId: 'contact_acme_tina', stakeholderRole: 'economic_buyer', relationshipStrength: 'strong', sentiment: 'neutral_positive', notes: 'Primary renewal sponsor; wants concise business-risk framing.' },
   { accountPlanStakeholderId: 'stake_acme_omar', accountPlanId: 'plan_acme_2026', contactId: 'contact_acme_omar', stakeholderRole: 'technical_champion', relationshipStrength: 'medium', sentiment: 'concerned', notes: 'Owns remediation details for MFA and workstation patch gap.' }
 ];
+const contactEngagementEvents = [
+  { engagementEventId: 'eng_acme_tina_qbr', accountId: 'acct_acme', contactId: 'contact_acme_tina', eventType: 'qbr', occurredAt: '2026-05-21T15:00:00Z', summary: 'QBR discussed renewal priorities and business impact of security posture.', sentiment: 'neutral_positive', sourceSystemType: 'psa' },
+  { engagementEventId: 'eng_acme_tina_email', accountId: 'acct_acme', contactId: 'contact_acme_tina', eventType: 'email', occurredAt: '2026-06-10T18:20:00Z', summary: 'Requested concise renewal risk summary before executive meeting.', sentiment: 'positive', sourceSystemType: 'psa' },
+  { engagementEventId: 'eng_acme_omar_ticket', accountId: 'acct_acme', contactId: 'contact_acme_omar', eventType: 'ticket_update', occurredAt: '2026-06-17T14:05:00Z', summary: 'Discussed workstation patch exceptions and MFA remediation timeline.', sentiment: 'concerned', sourceSystemType: 'psa' },
+  { engagementEventId: 'eng_northstar_evelyn_escalation', accountId: 'acct_northstar', contactId: 'contact_northstar_evelyn', eventType: 'escalation_call', occurredAt: '2026-06-18T20:30:00Z', summary: 'Escalated outage review; customer requested executive follow-up.', sentiment: 'negative', sourceSystemType: 'psa' },
+  { engagementEventId: 'eng_greenfield_ryan_renewal', accountId: 'acct_greenfield', contactId: 'contact_greenfield_ryan', eventType: 'renewal_call', occurredAt: '2026-05-05T16:15:00Z', summary: 'Renewal timing discussed; no QBR has been scheduled yet.', sentiment: 'neutral', sourceSystemType: 'psa' },
+  { engagementEventId: 'eng_summit_ava_checkin', accountId: 'acct_summit', contactId: 'contact_summit_ava', eventType: 'account_checkin', occurredAt: '2026-06-12T13:00:00Z', summary: 'Discussed backup and security expansion interest.', sentiment: 'positive', sourceSystemType: 'psa' }
+];
 const generatedArtifacts = [];
 const writeBackAuditEvents = [];
 const activities = [];
@@ -177,6 +185,7 @@ module.exports = {
   accountPlans,
   accountPlanObjectives,
   accountPlanStakeholders,
+  contactEngagementEvents,
   generatedArtifacts,
   writeBackAuditEvents,
   activities,

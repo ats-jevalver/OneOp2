@@ -21,6 +21,7 @@ Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuratio
 - Seeded demo users, accounts, integrations, contacts, agreements, renewals, tickets, devices, security findings, evidence, health scores, and recommendations.
 - Account search by name, domain, alias, contact email/name, and external source ID.
 - Account Command Center endpoint.
+- Relationship intelligence endpoint and command-center relationship card.
 - Revenue endpoint.
 - Service summary/detail endpoint.
 - RMM summary/detail endpoint.
@@ -101,6 +102,7 @@ All Sprint 7 foundation API smoke tests passed.
 GET  /api/v1/accounts/search?query=acme
 GET  /api/v1/accounts/:accountId/command-center
 GET  /api/v1/accounts/:accountId/revenue
+GET  /api/v1/accounts/:accountId/relationships
 GET  /api/v1/accounts/:accountId/service
 GET  /api/v1/accounts/:accountId/rmm
 GET  /api/v1/accounts/:accountId/security

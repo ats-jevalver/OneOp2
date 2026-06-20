@@ -26,6 +26,7 @@ function recommendations() { return data().recommendations; }
 function accountPlans() { return data().accountPlans || []; }
 function accountPlanObjectives() { return data().accountPlanObjectives || []; }
 function accountPlanStakeholders() { return data().accountPlanStakeholders || []; }
+function contactEngagementEvents() { return data().contactEngagementEvents || []; }
 
 function envelope(data, meta = {}, errors = []) {
   return { data, meta: { requestId: `req_${Date.now()}`, timestamp: new Date().toISOString(), ...meta }, errors };
@@ -142,6 +143,28 @@ function summarizeSecurity(accountId) {
   };
 }
 
+function relationshipSummary(accountId) {
+  const plan = accountPlans().find(p => p.accountId === accountId) || null;
+  const stakeholders = plan ? accountPlanStakeholders().filter(s => s.accountPlanId === plan.accountPlanId) : [];
+  const accountContacts = contacts().filter(c => c.accountId === accountId);
+  const events = contactEngagementEvents().filter(e => e.accountId === accountId).sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
+  const stakeholderContactIds = new Set(stakeholders.map(s => s.contactId));
+  const contactRows = accountContacts.map(contact => {
+    const stakeholder = stakeholders.find(s => s.contactId === contact.contactId) || null;
+    const contactEvents = events.filter(e => e.contactId === contact.contactId);
+    const lastTouch = contactEvents[0] || null;
+    const relationshipStrength = stakeholder?.relationshipStrength || (contactEvents.length ? 'medium' : 'unknown');
+    const sentiment = stakeholder?.sentiment || lastTouch?.sentiment || 'unknown';
+    const relationshipRisk = sentiment.includes('negative') || sentiment.includes('concerned') || !lastTouch ? 'watch' : 'normal';
+    return { contact, stakeholderRole: stakeholder?.stakeholderRole || (contact.isPrimaryContact ? 'primary_contact' : contact.isTechnicalContact ? 'technical_contact' : 'contact'), relationshipStrength, sentiment, relationshipRisk, lastTouch, engagementCount: contactEvents.length };
+  });
+  const gaps = [];
+  if (!contactRows.some(row => row.stakeholderRole === 'economic_buyer')) gaps.push({ type: 'missing_economic_buyer', message: 'No economic buyer is mapped in the account plan.' });
+  for (const contact of accountContacts.filter(c => !stakeholderContactIds.has(c.contactId) && c.isPrimaryContact)) gaps.push({ type: 'primary_contact_not_in_plan', contactId: contact.contactId, message: `${contact.fullName} is primary contact but is not mapped as an account plan stakeholder.` });
+  for (const row of contactRows.filter(r => r.relationshipRisk === 'watch')) gaps.push({ type: 'relationship_watch', contactId: row.contact.contactId, message: `${row.contact.fullName} needs relationship follow-up.` });
+  return { summary: { contactCount: accountContacts.length, stakeholderCount: stakeholders.length, engagementEventCount: events.length, relationshipRiskCount: contactRows.filter(r => r.relationshipRisk === 'watch').length }, contacts: contactRows, recentEngagement: events.slice(0, 5), gaps };
+}
+
 function searchAccounts(query, page = 1, pageSize = 10) {
   const q = String(query || '').trim().toLowerCase();
   if (!q) return { results: [], totalCount: 0 };
@@ -162,7 +185,7 @@ function commandCenter(accountId, dateRangePreset = 'last_90_days') {
   const renewal = renewals().find(r => r.accountId === accountId) || null;
   const health = latestHealth(accountId);
   const recs = forAccount(recommendations(), accountId).filter(r => r.status === 'new').map(recommendationDto);
-  return { account, header: accountSummary(account), snapshot: { accountOwner: findOwner(accountId), primaryContact: primaryContact(accountId), agreement, monthlyRecurringRevenue: agreement?.monthlyRecurringRevenue || null, annualRecurringRevenue: agreement?.annualRecurringRevenue || null, openOpportunityCount: 0, lastQbrDate: null }, health, renewal, dataFreshness: latestFreshness(accountId), service: summarizeService(accountId), rmm: summarizeRmm(accountId), security: summarizeSecurity(accountId), brief: { bodyFormat: 'markdown', body: `${account.displayName} is marked ${health.scoreCategory.replace('_', ' ')}. ${health.summary}` }, risks: health.topDrivers || [], opportunities: recs.filter(r => r.recommendationType === 'open_opportunity'), recommendations: recs, timeline: activityTimeline(accountId), warnings: accountWarnings(accountId), dateRangePreset };
+  return { account, header: accountSummary(account), snapshot: { accountOwner: findOwner(accountId), primaryContact: primaryContact(accountId), agreement, monthlyRecurringRevenue: agreement?.monthlyRecurringRevenue || null, annualRecurringRevenue: agreement?.annualRecurringRevenue || null, openOpportunityCount: 0, lastQbrDate: null }, health, renewal, dataFreshness: latestFreshness(accountId), service: summarizeService(accountId), rmm: summarizeRmm(accountId), security: summarizeSecurity(accountId), relationships: relationshipSummary(accountId), brief: { bodyFormat: 'markdown', body: `${account.displayName} is marked ${health.scoreCategory.replace('_', ' ')}. ${health.summary}` }, risks: health.topDrivers || [], opportunities: recs.filter(r => r.recommendationType === 'open_opportunity'), recommendations: recs, timeline: activityTimeline(accountId), warnings: accountWarnings(accountId), dateRangePreset };
 }
 
 function revenue(accountId) {
@@ -360,6 +383,11 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'security') {
     if (!ensureAccount(res, parts[3])) return;
     return json(res, 200, envelope(summarizeSecurity(parts[3])));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'relationships') {
+    if (!ensureAccount(res, parts[3])) return;
+    return json(res, 200, envelope(relationshipSummary(parts[3])));
   }
 
   if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'health-score' && parts[5] === 'latest') {

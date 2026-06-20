@@ -27,6 +27,14 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.renewal.daysUntilRenewal, 67);
     assert.equal(result.body.data.health.scoreCategory, 'watch');
     assert.ok(result.body.data.recommendations.length >= 2);
+    assert.ok(result.body.data.relationships.summary.stakeholderCount >= 2);
+    assert.ok(result.body.data.relationships.recentEngagement.length >= 1);
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/relationships');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.summary.contactCount, 2);
+    assert.ok(result.body.data.contacts.some(row => row.stakeholderRole === 'economic_buyer'));
+    assert.ok(result.body.data.recentEngagement.some(event => event.eventType === 'qbr'));
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/service');
     assert.equal(result.response.status, 200);
