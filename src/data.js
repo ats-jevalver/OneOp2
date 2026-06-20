@@ -147,6 +147,16 @@ const accountPlanObjectives = [
   { accountPlanObjectiveId: 'obj_acme_patch', accountPlanId: 'plan_acme_2026', title: 'Remediate legacy workstation patch gap', objectiveType: 'service_health', status: 'planned', priority: 'medium', targetDate: '2026-07-05', successMetric: 'Critical patch gap cleared or device replaced', linkedRecommendationId: null }
 ];
 
+const accountPlanRisks = [
+  { accountPlanRiskId: 'risk_acme_renewal_confidence', accountPlanId: 'plan_acme_2026', title: 'Renewal confidence could drop if service and security risks remain unresolved.', severity: 'high', status: 'open', mitigation: 'Use QBR to align business sponsor and technical owner on remediation plan.' },
+  { accountPlanRiskId: 'risk_acme_admin_mfa', accountPlanId: 'plan_acme_2026', title: 'Administrative MFA gap creates avoidable security exposure.', severity: 'high', status: 'open', mitigation: 'Confirm enforcement plan with Omar and security lead before QBR.' }
+];
+
+const accountPlanNextSteps = [
+  { accountPlanNextStepId: 'step_acme_schedule_qbr', accountPlanId: 'plan_acme_2026', title: 'Schedule renewal-focused QBR with Tina and Omar.', ownerUserId: 'usr_am_jane', dueDate: '2026-06-25', status: 'open', linkedObjectiveId: 'obj_acme_renewal' },
+  { accountPlanNextStepId: 'step_acme_mfa_plan', accountPlanId: 'plan_acme_2026', title: 'Confirm administrative MFA remediation timeline.', ownerUserId: 'usr_security_sam', dueDate: '2026-06-24', status: 'open', linkedObjectiveId: 'obj_acme_security' }
+];
+
 const accountPlanStakeholders = [
   { accountPlanStakeholderId: 'stake_acme_tina', accountPlanId: 'plan_acme_2026', contactId: 'contact_acme_tina', stakeholderRole: 'economic_buyer', relationshipStrength: 'strong', sentiment: 'neutral_positive', notes: 'Primary renewal sponsor; wants concise business-risk framing.' },
   { accountPlanStakeholderId: 'stake_acme_omar', accountPlanId: 'plan_acme_2026', contactId: 'contact_acme_omar', stakeholderRole: 'technical_champion', relationshipStrength: 'medium', sentiment: 'concerned', notes: 'Owns remediation details for MFA and workstation patch gap.' }
@@ -184,6 +194,8 @@ module.exports = {
   recommendations,
   accountPlans,
   accountPlanObjectives,
+  accountPlanRisks,
+  accountPlanNextSteps,
   accountPlanStakeholders,
   contactEngagementEvents,
   generatedArtifacts,

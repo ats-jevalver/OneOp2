@@ -22,6 +22,7 @@ Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuratio
 - Account search by name, domain, alias, contact email/name, and external source ID.
 - Account Command Center endpoint.
 - Relationship intelligence endpoint and command-center relationship card.
+- Editable account plan objectives, risks, and next steps.
 - Revenue endpoint.
 - Service summary/detail endpoint.
 - RMM summary/detail endpoint.

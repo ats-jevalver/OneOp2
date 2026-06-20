@@ -194,10 +194,22 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.accountPlanId, 'plan_acme_2026');
     assert.ok(result.body.data.objectives.length >= 3);
+    assert.ok(result.body.data.risks.length >= 2);
+    assert.ok(result.body.data.nextSteps.length >= 2);
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/account-plan', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'active', planSummary: 'Updated test account plan summary.' }) });
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.planSummary, 'Updated test account plan summary.');
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/account-plan', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ objectives: [{ accountPlanObjectiveId: 'obj_acme_security', status: 'in_progress' }], nextSteps: [{ accountPlanNextStepId: 'step_acme_mfa_plan', status: 'complete' }, { title: 'Prepare executive sponsor follow-up', ownerUserId: 'usr_am_jane', dueDate: '2026-06-30', status: 'open', linkedObjectiveId: 'obj_acme_renewal' }], risks: [{ title: 'Executive sponsor unavailable before QBR', severity: 'medium', status: 'open', mitigation: 'Confirm alternate sponsor.' }] }) });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.objectives.find(o => o.accountPlanObjectiveId === 'obj_acme_security').status, 'in_progress');
+    assert.equal(result.body.data.nextSteps.find(s => s.accountPlanNextStepId === 'step_acme_mfa_plan').status, 'complete');
+    assert.ok(result.body.data.nextSteps.some(s => s.title === 'Prepare executive sponsor follow-up'));
+    assert.ok(result.body.data.risks.some(r => r.title === 'Executive sponsor unavailable before QBR'));
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/account-plan', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ objectives: [{ accountPlanObjectiveId: 'missing_objective', status: 'complete' }] }) });
+    assert.equal(result.response.status, 400);
 
     result = await request(baseUrl, '/api/v1/portfolio/accounts-at-risk');
     assert.equal(result.response.status, 200);

@@ -25,6 +25,8 @@ function accountHealthScores() { return data().accountHealthScores; }
 function recommendations() { return data().recommendations; }
 function accountPlans() { return data().accountPlans || []; }
 function accountPlanObjectives() { return data().accountPlanObjectives || []; }
+function accountPlanRisks() { return data().accountPlanRisks || []; }
+function accountPlanNextSteps() { return data().accountPlanNextSteps || []; }
 function accountPlanStakeholders() { return data().accountPlanStakeholders || []; }
 function contactEngagementEvents() { return data().contactEngagementEvents || []; }
 
@@ -325,9 +327,15 @@ function portfolioRow(account) {
 function accountPlanDto(accountId) {
   const plan = accountPlans().find(p => p.accountId === accountId) || null;
   if (!plan) return null;
-  const objectives = accountPlanObjectives().filter(o => o.accountPlanId === plan.accountPlanId).map(o => ({ ...o, linkedRecommendation: o.linkedRecommendationId ? recommendationDto(byId(recommendations(), 'recommendationId', o.linkedRecommendationId)) : null }));
+  const overlay = store.getState().accountPlanStatus?.[plan.accountPlanId] || {};
+  const objectiveOverlays = overlay.objectives || {};
+  const riskOverlays = overlay.risks || {};
+  const nextStepOverlays = overlay.nextSteps || {};
+  const objectives = accountPlanObjectives().filter(o => o.accountPlanId === plan.accountPlanId).map(o => ({ ...o, ...(objectiveOverlays[o.accountPlanObjectiveId] || {}), linkedRecommendation: o.linkedRecommendationId ? recommendationDto(byId(recommendations(), 'recommendationId', o.linkedRecommendationId)) : null }));
+  const risks = [...accountPlanRisks().filter(r => r.accountPlanId === plan.accountPlanId), ...Object.values(riskOverlays).filter(r => r.isNew)].map(r => ({ ...r, ...(riskOverlays[r.accountPlanRiskId] || {}) }));
+  const nextSteps = [...accountPlanNextSteps().filter(s => s.accountPlanId === plan.accountPlanId), ...Object.values(nextStepOverlays).filter(s => s.isNew)].map(s => ({ ...s, ...(nextStepOverlays[s.accountPlanNextStepId] || {}), owner: userSummary((nextStepOverlays[s.accountPlanNextStepId] || s).ownerUserId) }));
   const stakeholders = accountPlanStakeholders().filter(s => s.accountPlanId === plan.accountPlanId).map(s => ({ ...s, contact: byId(contacts(), 'contactId', s.contactId) }));
-  return { ...plan, owner: userSummary(plan.ownerUserId), objectives, stakeholders };
+  return { ...plan, ...overlay, owner: userSummary(plan.ownerUserId), objectives, risks, nextSteps, stakeholders };
 }
 
 function json(res, status, body) {
@@ -614,9 +622,27 @@ async function handleApi(req, res, url) {
     const allowed = ['planSummary', 'status', 'targetReviewDate'];
     const patch = Object.fromEntries(Object.entries(body).filter(([key]) => allowed.includes(key)));
     store.getState().accountPlanStatus ||= {};
-    store.getState().accountPlanStatus[plan.accountPlanId] = { ...(store.getState().accountPlanStatus[plan.accountPlanId] || {}), ...patch, updatedAt: now() };
+    const existing = store.getState().accountPlanStatus[plan.accountPlanId] || {};
+    const objectiveOverlays = { ...(existing.objectives || {}) };
+    for (const item of body.objectives || []) {
+      if (!item.accountPlanObjectiveId || !plan.objectives.some(o => o.accountPlanObjectiveId === item.accountPlanObjectiveId)) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Objective update must reference an existing account plan objective.', field: 'objectives' }]));
+      objectiveOverlays[item.accountPlanObjectiveId] = { ...(objectiveOverlays[item.accountPlanObjectiveId] || {}), ...Object.fromEntries(Object.entries(item).filter(([key]) => ['status', 'targetDate', 'successMetric'].includes(key))), updatedAt: now() };
+    }
+    const riskOverlays = { ...(existing.risks || {}) };
+    for (const item of body.risks || []) {
+      const riskId = item.accountPlanRiskId || newId('risk');
+      if (!item.accountPlanRiskId && !item.title) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'New risks require a title.', field: 'risks' }]));
+      riskOverlays[riskId] = { ...(riskOverlays[riskId] || {}), accountPlanRiskId: riskId, accountPlanId: plan.accountPlanId, isNew: !item.accountPlanRiskId, ...Object.fromEntries(Object.entries(item).filter(([key]) => ['title', 'severity', 'status', 'mitigation'].includes(key))), updatedAt: now() };
+    }
+    const nextStepOverlays = { ...(existing.nextSteps || {}) };
+    for (const item of body.nextSteps || []) {
+      const stepId = item.accountPlanNextStepId || newId('step');
+      if (!item.accountPlanNextStepId && !item.title) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'New next steps require a title.', field: 'nextSteps' }]));
+      nextStepOverlays[stepId] = { ...(nextStepOverlays[stepId] || {}), accountPlanNextStepId: stepId, accountPlanId: plan.accountPlanId, isNew: !item.accountPlanNextStepId, ...Object.fromEntries(Object.entries(item).filter(([key]) => ['title', 'ownerUserId', 'dueDate', 'status', 'linkedObjectiveId'].includes(key))), updatedAt: now() };
+    }
+    store.getState().accountPlanStatus[plan.accountPlanId] = { ...existing, ...patch, objectives: objectiveOverlays, risks: riskOverlays, nextSteps: nextStepOverlays, updatedAt: now() };
     await store.flush();
-    return json(res, 200, envelope({ ...plan, ...store.getState().accountPlanStatus[plan.accountPlanId] }));
+    return json(res, 200, envelope(accountPlanDto(parts[3])));
   }
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'account-mapping' && parts[5] === 'confirm') {
