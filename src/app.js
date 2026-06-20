@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const store = require('./repositories/store');
 const dataRepository = require('./repositories/dataRepository');
 const { getPsaAdapter } = require('./integrations/psaAdapter');
@@ -57,6 +58,16 @@ function findOwner(accountId) {
 function userSummary(userId) {
   const user = byId(users(), 'userId', userId);
   return user ? { userId: user.userId, displayName: user.displayName, role: user.role } : null;
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
+function previewFingerprint(payload) {
+  return crypto.createHash('sha256').update(stableJson(payload)).digest('hex').slice(0, 24);
 }
 
 function primaryContact(accountId) {
@@ -280,8 +291,8 @@ function buildPsaSyncApply(integrationConnectionId, selectedRowIds = []) {
   };
 }
 
-function auditWriteBack({ accountId, actionType, targetRecordType, status, requestPayload, adapterResult = {}, recommendationId = null, generatedArtifactId = null, error = null }) {
-  const audit = { writeBackAuditEventId: newId('audit'), accountId, actionType, targetRecordType, status, adapter: adapterResult.adapter || 'mock', requestSummary: requestPayload ? { title: requestPayload.title, accountId: requestPayload.accountId, externalCompanyId: requestPayload.externalCompanyId } : null, responseSummary: adapterResult.requestSummary || null, error, requestPayload, externalId: adapterResult.externalId || null, externalUrl: adapterResult.externalUrl || null, recommendationId, generatedArtifactId, createdAt: now() };
+function auditWriteBack({ accountId, actionType, targetRecordType, status, requestPayload, adapterResult = {}, recommendationId = null, generatedArtifactId = null, previewFingerprint = null, error = null }) {
+  const audit = { writeBackAuditEventId: newId('audit'), accountId, actionType, targetRecordType, status, adapter: adapterResult.adapter || 'mock', requestFingerprint: previewFingerprint, requestSummary: requestPayload ? { title: requestPayload.title, accountId: requestPayload.accountId, externalCompanyId: requestPayload.externalCompanyId, previewFingerprint } : null, responseSummary: adapterResult.requestSummary || null, error, requestPayload, externalId: adapterResult.externalId || null, externalUrl: adapterResult.externalUrl || null, recommendationId, generatedArtifactId, createdAt: now() };
   store.add('writeBackAuditEvents', audit);
   return audit;
 }
@@ -524,6 +535,7 @@ async function handleApi(req, res, url) {
     const body = await parseBody(req);
     const preview = buildTaskPreview(parts[3], body);
     if (preview.error) return json(res, 400, envelope(null, {}, [preview.error]));
+    preview.previewFingerprint = previewFingerprint(preview.payload);
     return json(res, 200, envelope({ isValid: true, ...preview }));
   }
 
@@ -534,17 +546,19 @@ async function handleApi(req, res, url) {
     if (body.confirmed !== true) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'confirmed must be true before creating a PSA task.', field: 'confirmed' }]));
     const preview = buildTaskPreview(parts[3], body);
     if (preview.error) return json(res, 400, envelope(null, {}, [preview.error]));
+    const fingerprint = previewFingerprint(preview.payload);
+    if (body.previewFingerprint !== fingerprint) return json(res, 400, envelope(null, {}, [{ code: 'preview_fingerprint_required', message: 'Confirmed PSA task writes must include the previewFingerprint returned by preview.', field: 'previewFingerprint' }]));
     const activity = { activityId: newId('activity'), accountId: parts[3], activityType: 'psa_task_stub', title: preview.payload.title, body: preview.payload.body, status: 'open', dueDate: preview.payload.dueDate, ownerUserId: preview.payload.ownerUserId, recommendationId: preview.payload.recommendationId, createdAt: now() };
     const adapterResult = getPsaAdapter().createTask(preview.payload);
     if (adapterResult.status === 'validation_failed') {
-      const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'failed', requestPayload: preview.payload, adapterResult, recommendationId: preview.payload.recommendationId, error: { code: 'adapter_validation_failed', message: 'PSA adapter rejected the task payload.', missingFields: adapterResult.missingFields } });
+      const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'failed', requestPayload: preview.payload, adapterResult, recommendationId: preview.payload.recommendationId, previewFingerprint: fingerprint, error: { code: 'adapter_validation_failed', message: 'PSA adapter rejected the task payload.', missingFields: adapterResult.missingFields } });
       return json(res, 400, envelope(null, {}, [{ code: 'adapter_validation_failed', message: 'PSA adapter rejected the task payload.', missingFields: adapterResult.missingFields, auditEventId: audit.writeBackAuditEventId }]));
     }
     activity.externalId = adapterResult.externalId; activity.externalUrl = adapterResult.externalUrl;
     store.add('activities', activity);
     store.setRecommendationStatus(preview.payload.recommendationId, { status: 'converted_to_task', updatedAt: now() });
-    const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'succeeded', requestPayload: preview.payload, adapterResult, recommendationId: preview.payload.recommendationId });
-    return json(res, 201, envelope({ activityId: activity.activityId, externalId: audit.externalId, externalUrl: audit.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId }));
+    const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'succeeded', requestPayload: preview.payload, adapterResult, recommendationId: preview.payload.recommendationId, previewFingerprint: fingerprint });
+    return json(res, 201, envelope({ activityId: activity.activityId, externalId: audit.externalId, externalUrl: audit.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId, previewFingerprint: fingerprint }));
   }
 
   if (req.method === 'GET' && parts[2] === 'accounts' && parts[4] === 'write-back-audit-events') {
@@ -732,7 +746,8 @@ async function handleApi(req, res, url) {
     if (!psaIdentity) return json(res, 400, envelope(null, {}, [{ code: 'mapping_required', message: 'A confirmed PSA company mapping is required before PSA write-back.', field: 'accountId' }]));
     const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === body.generatedArtifactId && a.accountId === parts[3]);
     if (!artifact) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'generatedArtifactId is required for this account.', field: 'generatedArtifactId' }]));
-    return json(res, 200, envelope({ isValid: true, payload: { accountId: parts[3], externalCompanyId: psaIdentity.externalId, generatedArtifactId: artifact.generatedArtifactId, title: artifact.title, body: artifact.body, noteType: store.getState().settings.psaFieldMapping.defaultNoteType, isStub: true }, warnings: ['Sprint 5 uses a typed mock PSA adapter; no external PSA record is created.'] }));
+    const payload = { accountId: parts[3], externalCompanyId: psaIdentity.externalId, generatedArtifactId: artifact.generatedArtifactId, title: artifact.title, body: artifact.body, noteType: store.getState().settings.psaFieldMapping.defaultNoteType, isStub: true };
+    return json(res, 200, envelope({ isValid: true, payload, previewFingerprint: previewFingerprint(payload), warnings: ['Sprint 7 uses a typed mock PSA adapter; no external PSA record is created.'] }));
   }
 
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'psa' && parts[5] === 'notes' && !parts[6]) {
@@ -745,13 +760,15 @@ async function handleApi(req, res, url) {
     const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === body.generatedArtifactId && a.accountId === parts[3]);
     if (!artifact) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'generatedArtifactId is required for this account.', field: 'generatedArtifactId' }]));
     const payload = { accountId: parts[3], externalCompanyId: psaIdentity.externalId, title: artifact.title, body: artifact.body, generatedArtifactId: artifact.generatedArtifactId };
+    const fingerprint = previewFingerprint({ ...payload, noteType: store.getState().settings.psaFieldMapping.defaultNoteType, isStub: true });
+    if (body.previewFingerprint !== fingerprint) return json(res, 400, envelope(null, {}, [{ code: 'preview_fingerprint_required', message: 'Confirmed PSA note writes must include the previewFingerprint returned by preview.', field: 'previewFingerprint' }]));
     const adapterResult = getPsaAdapter().createNote(payload);
     if (adapterResult.status === 'validation_failed') {
-      const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'failed', requestPayload: payload, adapterResult, generatedArtifactId: artifact.generatedArtifactId, error: { code: 'adapter_validation_failed', message: 'PSA adapter rejected the note payload.', missingFields: adapterResult.missingFields } });
+      const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'failed', requestPayload: payload, adapterResult, generatedArtifactId: artifact.generatedArtifactId, previewFingerprint: fingerprint, error: { code: 'adapter_validation_failed', message: 'PSA adapter rejected the note payload.', missingFields: adapterResult.missingFields } });
       return json(res, 400, envelope(null, {}, [{ code: 'adapter_validation_failed', message: 'PSA adapter rejected the note payload.', missingFields: adapterResult.missingFields, auditEventId: audit.writeBackAuditEventId }]));
     }
-    const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'succeeded', requestPayload: payload, adapterResult, generatedArtifactId: artifact.generatedArtifactId });
-    return json(res, 201, envelope({ externalId: adapterResult.externalId, externalUrl: adapterResult.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId }));
+    const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'succeeded', requestPayload: payload, adapterResult, generatedArtifactId: artifact.generatedArtifactId, previewFingerprint: fingerprint });
+    return json(res, 201, envelope({ externalId: adapterResult.externalId, externalUrl: adapterResult.externalUrl, status: 'created_stub', auditEventId: audit.writeBackAuditEventId, previewFingerprint: fingerprint }));
   }
 
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'artifacts' && ['qbr-draft','customer-email-draft'].includes(parts[5])) {

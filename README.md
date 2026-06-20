@@ -42,6 +42,7 @@ Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuratio
 - Persistence provider status endpoint with JSON default and PostgreSQL seam diagnostics.
 - PostgreSQL starter schema under `db/schema.sql`.
 - Typed mock PSA adapter for task and note stubs with deterministic IDs, required-field validation, and richer audit details.
+- PSA task/note write-back confirmations require preview fingerprints and record reviewed request fingerprints in audit events.
 - QBR draft and customer email draft artifact endpoints.
 - Generated artifact markdown export, evidence appendix, review lifecycle, and customer email review handoff endpoints.
 - Integration capability status and sync preview count responses.

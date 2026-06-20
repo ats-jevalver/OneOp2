@@ -157,16 +157,24 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.isValid, true);
     assert.equal(result.body.data.payload.recommendationId, 'rec_acme_qbr');
     assert.equal(result.body.data.payload.externalCompanyId, 'PSA-1001');
+    assert.ok(result.body.data.previewFingerprint);
+    const taskPreviewFingerprint = result.body.data.previewFingerprint;
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/tasks', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_qbr', confirmed: true })
     });
+    assert.equal(result.response.status, 400);
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/tasks', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_qbr', previewFingerprint: taskPreviewFingerprint, confirmed: true })
+    });
     assert.equal(result.response.status, 201);
     assert.equal(result.body.data.status, 'created_stub');
+    assert.equal(result.body.data.previewFingerprint, taskPreviewFingerprint);
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/write-back-audit-events');
     assert.equal(result.response.status, 200);
-    assert.ok(result.body.data.some(e => e.recommendationId === 'rec_acme_qbr' && e.adapter === 'mock' && e.requestSummary.externalCompanyId === 'PSA-1001'));
+    assert.ok(result.body.data.some(e => e.recommendationId === 'rec_acme_qbr' && e.adapter === 'mock' && e.requestSummary.externalCompanyId === 'PSA-1001' && e.requestFingerprint === taskPreviewFingerprint));
 
     result = await request(baseUrl, '/api/v1/accounts/acct_riverbend/psa/tasks/preview', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recommendationId: 'rec_acme_qbr' })
@@ -285,8 +293,12 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     const notePreview = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId }) });
     assert.equal(notePreview.response.status, 200);
     assert.equal(notePreview.body.data.payload.externalCompanyId, 'PSA-1001');
-    const noteCreate = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId, confirmed: true }) });
+    assert.ok(notePreview.body.data.previewFingerprint);
+    const noteMissingFingerprint = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId, confirmed: true }) });
+    assert.equal(noteMissingFingerprint.response.status, 400);
+    const noteCreate = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId, previewFingerprint: notePreview.body.data.previewFingerprint, confirmed: true }) });
     assert.equal(noteCreate.response.status, 201);
+    assert.equal(noteCreate.body.data.previewFingerprint, notePreview.body.data.previewFingerprint);
 
     result = await request(baseUrl, '/api/v1/accounts/acct_acme/assistant/ask', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'Prepare me for my call' }) });
     assert.equal(result.response.status, 200);
