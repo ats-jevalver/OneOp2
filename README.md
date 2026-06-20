@@ -206,7 +206,7 @@ $env:ONEOP2_DATABASE_URL="postgres://user:password@localhost:5432/oneop2"
 npm start
 ```
 
-The PostgreSQL provider stores OneOp2 runtime workflow state in `app_settings` under key `oneop2_runtime_state`. The seed loader also populates normalized reference and operational tables for users, accounts, integrations, mappings, owners, aliases, contacts, agreements, renewals, tickets, devices, RMM health signals, security findings, security coverage, evidence, health scores, and recommendations. When `ONEOP2_STORE_PROVIDER=postgres`, API read paths hydrate from the normalized PostgreSQL tables at startup. JSON mode continues to read from `src/data.js` for local demos.
+The PostgreSQL provider stores OneOp2 runtime workflow state in `app_settings` under key `oneop2_runtime_state`. The seed loader also populates normalized reference and operational tables for users, accounts, integrations, mappings, owners, aliases, contacts, agreements, renewals, tickets, devices, RMM health signals, security findings, security coverage, evidence, health scores, recommendations, account plan risks/next steps, contact engagement events, and Sprint 7 integration pilot configuration. When `ONEOP2_STORE_PROVIDER=postgres`, API read paths hydrate from the normalized PostgreSQL tables at startup. JSON mode continues to read from `src/data.js` for local demos.
 
 Validate PostgreSQL-backed API reads after setting `ONEOP2_DATABASE_URL`:
 
@@ -215,7 +215,7 @@ npm run test:postgres
 ```
 
 
-Sprint 6 foundation endpoints:
+Sprint 7 pilot endpoints:
 
 ```text
 GET   /api/v1/session/current-user
@@ -223,32 +223,62 @@ PATCH /api/v1/session/current-user
 GET   /api/v1/admin/database/status
 GET   /api/v1/accounts/:accountId/account-plan
 PATCH /api/v1/accounts/:accountId/account-plan
+GET   /api/v1/accounts/:accountId/relationships
+GET   /api/v1/admin/integrations/:integrationConnectionId/configuration
+PATCH /api/v1/admin/integrations/:integrationConnectionId/configuration
+POST  /api/v1/admin/integrations/:integrationConnectionId/sync-preview
+POST  /api/v1/admin/integrations/:integrationConnectionId/sync/apply
+GET   /api/v1/admin/integrations/:integrationConnectionId/sync-history
+PATCH /api/v1/generated-artifacts/:generatedArtifactId
 ```
 
 `PATCH /api/v1/session/current-user` is a local-demo helper for RBAC testing. Do not expose it as-is in production authentication flows. `GET /api/v1/admin/database/status` returns seed/table health without returning connection secrets.
 
 
-Sprint 6 UI additions:
+Sprint 7 UI additions:
 
 - Provider/database status panel on the Account Search screen.
 - Local demo current-user switch buttons for account manager/admin testing.
-- Account plan card on the Account Command Center.
+- Account plan card with editable objectives, risks, next steps, and linked artifacts.
+- Relationship card with key contacts, recent engagement, and relationship watch items.
 - QBR draft and customer email draft quick actions on the Account Command Center.
 - Markdown export and email handoff links for generated artifacts.
+- Admin Integrations screen for PSA configuration, sync preview/apply, and sync history.
 
-## Sprint 6 Candidates
+## Sprint 7 Pilot Demo Script
 
-- Activate PostgreSQL provider implementation.
-- Real PSA write-back for task and note creation.
-- Real PSA company/contact/ticket sync hardening.
+1. Start OneOp2 in PostgreSQL mode.
+2. Switch to the Admin demo user from the provider status panel.
+3. Open Admin Integrations and verify provider/database status.
+4. Review and save non-secret PSA configuration fields.
+5. Run PSA company/contact sync preview and inspect matched/new/conflict rows.
+6. Apply safe selected rows and verify sync history updates.
+7. Switch to the Account Manager demo user.
+8. Search `acme` and open the Account Command Center.
+9. Review the Account Plan card, relationship card, and generated next-best actions.
+10. Complete a next step or add a demo risk from the Account Plan card.
+11. Generate a QBR draft; it links to the renewal objective and exports markdown with evidence.
+12. Preview and confirm a PSA task/note write-back using the returned preview fingerprint.
+13. Review write-back audit history to confirm the reviewed request fingerprint was stored.
+14. Run `npm test` and `npm run test:postgres`.
+
+## Sprint 7 Validation Checklist
+
+- `node --check public/app.js`
+- `npm test`
+- `node scripts/seed-postgres.js` with `ONEOP2_DATABASE_URL` set
+- `npm run test:postgres` with `ONEOP2_DATABASE_URL` set
+- Confirm no secrets are committed or returned by configuration APIs.
+
+## Sprint 8 Candidates
+
+- Real PSA connector spike using user-provided credentials.
+- Production authentication/session model to replace demo user switching.
 - Real RMM read integration spike.
 - Real Microsoft 365/security read integration spike.
 - QBR export to PDF or PowerPoint.
-- Customer email prepare/send handoff.
+- Buffaly prepare-email handoff for reviewed customer email drafts.
 - Buffaly assistant with conversational memory.
-- Account plan editor.
-- Relationship/contact engagement model.
 - Deployment packaging.
-- Production authentication.
 - Multi-tenant architecture design.
 
