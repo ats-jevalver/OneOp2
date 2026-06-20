@@ -16,6 +16,7 @@ document.getElementById('closeTask').addEventListener('click', () => taskDialog.
 document.getElementById('closeBrief').addEventListener('click', () => briefDialog.close());
 document.getElementById('showPortfolio').addEventListener('click', e => { e.preventDefault(); showPortfolio(); });
 document.getElementById('showMapping').addEventListener('click', e => { e.preventDefault(); showMapping(); });
+document.getElementById('showAdminIntegrations').addEventListener('click', e => { e.preventDefault(); showAdminIntegrations(); });
 
 async function api(path, options) { const response = await fetch(path, options); const json = await response.json(); if (!response.ok) throw new Error(json.errors?.[0]?.message || 'Request failed'); return json.data; }
 async function track(eventType, accountId, eventProperties = {}) { try { await api('/api/v1/product-events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ eventType, accountId, eventProperties }) }); } catch {} }
@@ -102,6 +103,24 @@ async function showMapping() {
   commandCenter.innerHTML = `<h2>Mapping Admin</h2>${rows.length ? rows.map(r => `<div class="card"><h3>${r.account.displayName}</h3><p>${r.sourceSystemName}: ${r.externalDisplayName}</p><p>Confidence: ${r.matchConfidence}. ${r.matchReason}</p><button class="confirm-map" data-id="${r.accountExternalIdentityId}">Confirm</button> <button class="secondary reject-map" data-id="${r.accountExternalIdentityId}">Reject</button></div>`).join('') : '<p class="muted">No mapping suggestions need review.</p>'}`;
   for (const btn of document.querySelectorAll('.confirm-map')) btn.onclick = async () => { await api(`/api/v1/admin/account-mapping/${btn.dataset.id}/confirm`, { method: 'POST' }); showMapping(); };
   for (const btn of document.querySelectorAll('.reject-map')) btn.onclick = async () => { await api(`/api/v1/admin/account-mapping/${btn.dataset.id}/reject`, { method: 'POST' }); showMapping(); };
+}
+async function showAdminIntegrations() {
+  commandCenter.className = 'command-center';
+  commandCenter.innerHTML = '<p class="muted">Loading admin integration settings...</p>';
+  try {
+    const [status, config, history] = await Promise.all([
+      api('/api/v1/integrations/status'),
+      api('/api/v1/admin/integrations/int_psa_demo/configuration'),
+      api('/api/v1/admin/integrations/int_psa_demo/sync-history')
+    ]);
+    const psa = status.integrations.find(i => i.integrationConnectionId === 'int_psa_demo');
+    commandCenter.innerHTML = `<h2>Admin Integrations</h2><div class="cards"><div class="card"><h3>Provider</h3><p><strong>Store:</strong> ${badge(status.store.provider)} ${esc(status.store.message || '')}</p><p><strong>PSA:</strong> ${esc(psa?.systemName || 'Demo PSA')} ${badge(psa?.status || 'unknown')}</p><p class="muted small">Capabilities: ${(psa?.capabilities || []).map(esc).join(', ')}</p></div><div class="card"><h3>PSA Configuration</h3><label>Environment<input id="psaEnvironment" value="${esc(config.environmentLabel || '')}"></label><label>Base URL<input id="psaBaseUrl" value="${esc(config.baseUrl || '')}"></label><label>Tenant/Company<input id="psaTenant" value="${esc(config.tenantOrCompanyId || '')}"></label><p class="muted small">Secret status: ${esc(config.secretStatus || 'not_configured')}. Secrets are never returned by this UI.</p><button id="savePsaConfig">Save Non-Secret Config</button></div><div class="card full"><h3>Sync Preview / Apply</h3><p><button id="previewPsaSync">Preview PSA Company/Contact Sync</button> <button class="secondary" id="applySafePsaRows" disabled>Apply Safe Selected Rows</button></p><div id="syncPreviewResult" class="muted">Run preview to inspect rows before applying.</div></div><div class="card full"><h3>Sync History</h3><ul class="clean" id="syncHistoryList">${history.length ? history.map(run => `<li><strong>${esc(run.status)}</strong>: applied ${run.counts.applied}, conflicts ${run.counts.conflicts} <span class="muted small">${esc(run.appliedAt)}</span></li>`).join('') : '<li>No Sprint 7 sync apply runs yet.</li>'}</ul></div></div>`;
+    document.getElementById('savePsaConfig').onclick = async () => { await api('/api/v1/admin/integrations/int_psa_demo/configuration', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ environmentLabel: document.getElementById('psaEnvironment').value, baseUrl: document.getElementById('psaBaseUrl').value, tenantOrCompanyId: document.getElementById('psaTenant').value }) }); await showAdminIntegrations(); };
+    document.getElementById('previewPsaSync').onclick = async () => { const preview = await api('/api/v1/admin/integrations/int_psa_demo/sync-preview', { method: 'POST' }); const safeRows = [...preview.companies, ...preview.contacts].filter(row => row.action !== 'conflict').slice(0, 3).map(row => row.rowId); document.getElementById('applySafePsaRows').dataset.rows = safeRows.join(','); document.getElementById('applySafePsaRows').disabled = false; document.getElementById('syncPreviewResult').innerHTML = `<p><strong>Total:</strong> ${preview.counts.total} | New: ${preview.counts.new} | Matched: ${preview.counts.matched} | Changed: ${preview.counts.changed} | Conflicts: ${preview.counts.conflicts}</p><ul class="clean">${preview.companies.map(row => `<li>${badge(row.action)} ${esc(row.displayName)} <span class="muted small">${esc(row.reason)}</span></li>`).join('')}</ul>`; };
+    document.getElementById('applySafePsaRows').onclick = async event => { const selectedRowIds = event.target.dataset.rows.split(',').filter(Boolean); await api('/api/v1/admin/integrations/int_psa_demo/sync/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ selectedRowIds }) }); await showAdminIntegrations(); };
+  } catch (error) {
+    commandCenter.innerHTML = `<h2>Admin Integrations</h2><p class="warning">${esc(error.message)} Switch to the Admin demo user to operate integration settings.</p>`;
+  }
 }
 form.addEventListener('submit', event => { event.preventDefault(); search().catch(err => results.innerHTML = `<p class="warning">${err.message}</p>`); });
 track('app_opened');

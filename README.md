@@ -46,6 +46,7 @@ Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuratio
 - Generated artifact markdown export, evidence appendix, review lifecycle, and customer email review handoff endpoints.
 - Integration capability status and sync preview count responses.
 - Sprint 7 admin PSA integration configuration, company/contact sync preview, controlled apply stub, and sync history endpoints.
+- Admin Integrations UI for PSA configuration, sync preview/apply, and history.
 - Assistant prompt endpoint for call prep, risk rationale, and next actions.
 - Integration list and sync stub endpoint.
 - Product event tracking endpoint.
