@@ -23,6 +23,7 @@ Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuratio
 - Account Command Center endpoint.
 - Relationship intelligence endpoint and command-center relationship card.
 - Editable account plan objectives, risks, and next steps.
+- Generated artifacts can be linked to account plan objectives and next steps.
 - Revenue endpoint.
 - Service summary/detail endpoint.
 - RMM summary/detail endpoint.

@@ -243,6 +243,19 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.artifactType, 'qbr_draft');
     const qbrArtifactId = result.body.data.generatedArtifactId;
 
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${qbrArtifactId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ accountPlanObjectiveId: 'obj_acme_renewal', accountPlanNextStepId: 'step_acme_schedule_qbr' }) });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.accountPlanObjectiveId, 'obj_acme_renewal');
+    assert.equal(result.body.data.accountPlanNextStepId, 'step_acme_schedule_qbr');
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/account-plan');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.objectives.find(o => o.accountPlanObjectiveId === 'obj_acme_renewal').linkedArtifacts.some(a => a.generatedArtifactId === qbrArtifactId));
+    assert.ok(result.body.data.nextSteps.find(s => s.accountPlanNextStepId === 'step_acme_schedule_qbr').linkedArtifacts.some(a => a.generatedArtifactId === qbrArtifactId));
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${qbrArtifactId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ accountPlanObjectiveId: 'missing_objective' }) });
+    assert.equal(result.response.status, 400);
+
     result = await request(baseUrl, `/api/v1/generated-artifacts/${qbrArtifactId}/export?format=markdown`);
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.exportFormat, 'markdown');

@@ -331,11 +331,12 @@ function accountPlanDto(accountId) {
   const objectiveOverlays = overlay.objectives || {};
   const riskOverlays = overlay.risks || {};
   const nextStepOverlays = overlay.nextSteps || {};
-  const objectives = accountPlanObjectives().filter(o => o.accountPlanId === plan.accountPlanId).map(o => ({ ...o, ...(objectiveOverlays[o.accountPlanObjectiveId] || {}), linkedRecommendation: o.linkedRecommendationId ? recommendationDto(byId(recommendations(), 'recommendationId', o.linkedRecommendationId)) : null }));
+  const linkedArtifacts = store.list('generatedArtifacts', a => a.accountId === accountId && (a.accountPlanObjectiveId || a.accountPlanNextStepId)).map(a => ({ generatedArtifactId: a.generatedArtifactId, artifactType: a.artifactType, title: a.title, status: a.status, accountPlanObjectiveId: a.accountPlanObjectiveId || null, accountPlanNextStepId: a.accountPlanNextStepId || null, updatedAt: a.updatedAt }));
+  const objectives = accountPlanObjectives().filter(o => o.accountPlanId === plan.accountPlanId).map(o => ({ ...o, ...(objectiveOverlays[o.accountPlanObjectiveId] || {}), linkedRecommendation: o.linkedRecommendationId ? recommendationDto(byId(recommendations(), 'recommendationId', o.linkedRecommendationId)) : null, linkedArtifacts: linkedArtifacts.filter(a => a.accountPlanObjectiveId === o.accountPlanObjectiveId) }));
   const risks = [...accountPlanRisks().filter(r => r.accountPlanId === plan.accountPlanId), ...Object.values(riskOverlays).filter(r => r.isNew)].map(r => ({ ...r, ...(riskOverlays[r.accountPlanRiskId] || {}) }));
-  const nextSteps = [...accountPlanNextSteps().filter(s => s.accountPlanId === plan.accountPlanId), ...Object.values(nextStepOverlays).filter(s => s.isNew)].map(s => ({ ...s, ...(nextStepOverlays[s.accountPlanNextStepId] || {}), owner: userSummary((nextStepOverlays[s.accountPlanNextStepId] || s).ownerUserId) }));
+  const nextSteps = [...accountPlanNextSteps().filter(s => s.accountPlanId === plan.accountPlanId), ...Object.values(nextStepOverlays).filter(s => s.isNew)].map(s => ({ ...s, ...(nextStepOverlays[s.accountPlanNextStepId] || {}), owner: userSummary((nextStepOverlays[s.accountPlanNextStepId] || s).ownerUserId), linkedArtifacts: linkedArtifacts.filter(a => a.accountPlanNextStepId === s.accountPlanNextStepId) }));
   const stakeholders = accountPlanStakeholders().filter(s => s.accountPlanId === plan.accountPlanId).map(s => ({ ...s, contact: byId(contacts(), 'contactId', s.contactId) }));
-  return { ...plan, ...overlay, owner: userSummary(plan.ownerUserId), objectives, risks, nextSteps, stakeholders };
+  return { ...plan, ...overlay, owner: userSummary(plan.ownerUserId), objectives, risks, nextSteps, stakeholders, linkedArtifacts };
 }
 
 function json(res, status, body) {
@@ -578,10 +579,15 @@ async function handleApi(req, res, url) {
     if (!artifact) return notFound(res, 'Generated artifact not found.');
     const body = await parseBody(req);
     const allowed = ['draft', 'reviewed', 'approved', 'archived'];
-    if (!allowed.includes(body.status)) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Invalid generated artifact status.', field: 'status' }]));
-    artifact.status = body.status;
+    if (body.status !== undefined && !allowed.includes(body.status)) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Invalid generated artifact status.', field: 'status' }]));
+    const plan = accountPlanDto(artifact.accountId);
+    if (body.accountPlanObjectiveId && !plan?.objectives.some(o => o.accountPlanObjectiveId === body.accountPlanObjectiveId)) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'accountPlanObjectiveId must reference an objective for this artifact account.', field: 'accountPlanObjectiveId' }]));
+    if (body.accountPlanNextStepId && !plan?.nextSteps.some(s => s.accountPlanNextStepId === body.accountPlanNextStepId)) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'accountPlanNextStepId must reference a next step for this artifact account.', field: 'accountPlanNextStepId' }]));
+    if (body.status !== undefined) artifact.status = body.status;
     artifact.reviewedByUserId = body.status === 'reviewed' || body.status === 'approved' ? currentUser()?.userId : artifact.reviewedByUserId;
     artifact.reviewNotes = body.reviewNotes || artifact.reviewNotes || null;
+    if (body.accountPlanObjectiveId !== undefined) artifact.accountPlanObjectiveId = body.accountPlanObjectiveId || null;
+    if (body.accountPlanNextStepId !== undefined) artifact.accountPlanNextStepId = body.accountPlanNextStepId || null;
     artifact.updatedAt = now();
     await store.flush();
     return json(res, 200, envelope(artifact));
@@ -610,8 +616,7 @@ async function handleApi(req, res, url) {
     if (!ensureAccount(res, parts[3])) return;
     const plan = accountPlanDto(parts[3]);
     if (!plan) return notFound(res, 'Account plan not found.');
-    const overlay = store.getState().accountPlanStatus?.[plan.accountPlanId] || {};
-    return json(res, 200, envelope({ ...plan, ...overlay }));
+    return json(res, 200, envelope(plan));
   }
 
   if (req.method === 'PATCH' && parts[2] === 'accounts' && parts[4] === 'account-plan') {
