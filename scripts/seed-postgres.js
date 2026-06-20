@@ -16,8 +16,10 @@ const runtimeInitialState = {
   generatedArtifacts: [],
   writeBackAuditEvents: [],
   activities: [],
+  syncHistory: [],
   recommendationStatus: {},
   mappingStatus: {},
+  accountPlanStatus: {},
   settings: {
     currentUserId: 'usr_am_jane',
     psaFieldMapping: {
@@ -26,6 +28,19 @@ const runtimeInitialState = {
       defaultTaskPriority: 'Normal',
       defaultBoard: 'Account Management',
       defaultNoteType: 'Account Note'
+    },
+    integrationConfigurations: {
+      int_psa_demo: {
+        integrationConnectionId: 'int_psa_demo',
+        providerType: 'mock_psa',
+        environmentLabel: 'Sprint 7 Pilot Sandbox',
+        baseUrl: 'mock://psa',
+        tenantOrCompanyId: 'demo-tenant',
+        enabledCapabilities: ['company_sync_preview', 'contact_sync_preview', 'create_task', 'create_note'],
+        secretStatus: 'not_configured',
+        updatedAt: null,
+        updatedByUserId: null
+      }
     }
   }
 };
@@ -44,6 +59,11 @@ async function main() {
     await client.query(fs.readFileSync(schemaPath, 'utf8'));
     await client.query(`
       truncate table
+        integration_sync_history,
+        integration_configurations,
+        contact_engagement_events,
+        account_plan_next_steps,
+        account_plan_risks,
         activities,
         write_back_audit_events,
         generated_artifacts,
@@ -154,10 +174,30 @@ async function main() {
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
     `, o => [o.accountPlanObjectiveId, o.accountPlanId, o.title, o.objectiveType, o.status, o.priority, o.targetDate, o.successMetric, o.linkedRecommendationId]);
 
+    await insertMany(client, data.accountPlanRisks || [], `
+      insert into account_plan_risks (account_plan_risk_id, account_plan_id, title, severity, status, mitigation, updated_at)
+      values ($1,$2,$3,$4,$5,$6,now())
+    `, r => [r.accountPlanRiskId, r.accountPlanId, r.title, r.severity, r.status, r.mitigation]);
+
+    await insertMany(client, data.accountPlanNextSteps || [], `
+      insert into account_plan_next_steps (account_plan_next_step_id, account_plan_id, title, owner_user_id, due_date, status, linked_objective_id, updated_at)
+      values ($1,$2,$3,$4,$5,$6,$7,now())
+    `, s => [s.accountPlanNextStepId, s.accountPlanId, s.title, s.ownerUserId, s.dueDate, s.status, s.linkedObjectiveId]);
+
     await insertMany(client, data.accountPlanStakeholders || [], `
       insert into account_plan_stakeholders (account_plan_stakeholder_id, account_plan_id, contact_id, stakeholder_role, relationship_strength, sentiment, notes)
       values ($1,$2,$3,$4,$5,$6,$7)
     `, s => [s.accountPlanStakeholderId, s.accountPlanId, s.contactId, s.stakeholderRole, s.relationshipStrength, s.sentiment, s.notes]);
+
+    await insertMany(client, data.contactEngagementEvents || [], `
+      insert into contact_engagement_events (engagement_event_id, account_id, contact_id, event_type, occurred_at, summary, sentiment, source_system_type)
+      values ($1,$2,$3,$4,$5,$6,$7,$8)
+    `, e => [e.engagementEventId, e.accountId, e.contactId, e.eventType, toDate(e.occurredAt), e.summary, e.sentiment, e.sourceSystemType]);
+
+    await client.query(`
+      insert into integration_configurations (integration_connection_id, provider_type, environment_label, base_url, tenant_or_company_id, enabled_capabilities, secret_status, updated_at)
+      values ($1,$2,$3,$4,$5,$6::jsonb,$7,now())
+    `, ['int_psa_demo', 'mock_psa', 'Sprint 7 Pilot Sandbox', 'mock://psa', 'demo-tenant', asJson(['company_sync_preview', 'contact_sync_preview', 'create_task', 'create_note']), 'not_configured']);
 
     await client.query(`
       insert into app_settings (setting_key, setting_value, updated_at)
@@ -166,7 +206,7 @@ async function main() {
 
     await client.query('commit');
 
-    const tables = ['users','accounts','integrations','account_external_identities','account_owners','account_aliases','contacts','agreements','renewals','tickets','devices','device_health_signals','security_findings','security_coverage','evidence_items','account_health_scores','recommendations','account_plans','account_plan_objectives','account_plan_stakeholders','app_settings'];
+    const tables = ['users','accounts','integrations','account_external_identities','account_owners','account_aliases','contacts','agreements','renewals','tickets','devices','device_health_signals','security_findings','security_coverage','evidence_items','account_health_scores','recommendations','account_plans','account_plan_objectives','account_plan_risks','account_plan_next_steps','account_plan_stakeholders','contact_engagement_events','integration_configurations','integration_sync_history','app_settings'];
     const counts = {};
     for (const table of tables) {
       const result = await pool.query(`select count(*)::int as count from ${table}`);

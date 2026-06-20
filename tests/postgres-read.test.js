@@ -35,6 +35,10 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.connected, true);
     assert.equal(result.body.data.seedValid, true);
     assert.ok(result.body.data.tableCounts.accounts >= 7);
+    assert.ok(result.body.data.tableCounts.account_plan_risks >= 2);
+    assert.ok(result.body.data.tableCounts.account_plan_next_steps >= 2);
+    assert.ok(result.body.data.tableCounts.contact_engagement_events >= 1);
+    assert.ok(result.body.data.tableCounts.integration_configurations >= 1);
 
     result = await request(baseUrl, '/api/v1/session/current-user', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ userId: 'usr_am_jane' }) });
     assert.equal(result.response.status, 200);
@@ -49,6 +53,12 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.accountPlanId, 'plan_acme_2026');
     assert.ok(result.body.data.stakeholders.length >= 2);
+    assert.ok(result.body.data.risks.length >= 2);
+    assert.ok(result.body.data.nextSteps.length >= 2);
+
+    result = await request(baseUrl, '/api/v1/accounts/acct_acme/relationships');
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.data.recentEngagement.length >= 1);
 
     console.log('PostgreSQL API read smoke test passed.');
   } finally {

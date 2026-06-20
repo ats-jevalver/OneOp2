@@ -265,7 +265,13 @@ create table if not exists generated_artifacts (
   updated_at timestamptz not null default now()
 );
 
+alter table generated_artifacts add column if not exists account_plan_objective_id text references account_plan_objectives(account_plan_objective_id);
+alter table generated_artifacts add column if not exists account_plan_next_step_id text;
+alter table generated_artifacts add column if not exists reviewed_by_user_id text references users(user_id);
+alter table generated_artifacts add column if not exists review_notes text;
+
 create index if not exists idx_generated_artifacts_account_type on generated_artifacts(account_id, artifact_type);
+create index if not exists idx_generated_artifacts_plan_objective on generated_artifacts(account_plan_objective_id);
 
 create table if not exists write_back_audit_events (
   write_back_audit_event_id text primary key,
@@ -331,6 +337,31 @@ create table if not exists account_plan_objectives (
 
 create index if not exists idx_account_plan_objectives_plan on account_plan_objectives(account_plan_id);
 
+create table if not exists account_plan_risks (
+  account_plan_risk_id text primary key,
+  account_plan_id text not null references account_plans(account_plan_id) on delete cascade,
+  title text not null,
+  severity text not null,
+  status text not null default 'open',
+  mitigation text,
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_account_plan_risks_plan on account_plan_risks(account_plan_id);
+
+create table if not exists account_plan_next_steps (
+  account_plan_next_step_id text primary key,
+  account_plan_id text not null references account_plans(account_plan_id) on delete cascade,
+  title text not null,
+  owner_user_id text references users(user_id),
+  due_date date,
+  status text not null default 'open',
+  linked_objective_id text references account_plan_objectives(account_plan_objective_id),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_account_plan_next_steps_plan on account_plan_next_steps(account_plan_id);
+
 create table if not exists account_plan_stakeholders (
   account_plan_stakeholder_id text primary key,
   account_plan_id text not null references account_plans(account_plan_id) on delete cascade,
@@ -342,6 +373,46 @@ create table if not exists account_plan_stakeholders (
 );
 
 create index if not exists idx_account_plan_stakeholders_plan on account_plan_stakeholders(account_plan_id);
+
+create table if not exists contact_engagement_events (
+  engagement_event_id text primary key,
+  account_id text not null references accounts(account_id),
+  contact_id text references contacts(contact_id),
+  event_type text not null,
+  occurred_at timestamptz not null,
+  summary text not null,
+  sentiment text,
+  source_system_type text
+);
+
+create index if not exists idx_contact_engagement_account_occurred on contact_engagement_events(account_id, occurred_at desc);
+
+create table if not exists integration_configurations (
+  integration_connection_id text primary key references integrations(integration_connection_id),
+  provider_type text not null,
+  environment_label text,
+  base_url text,
+  tenant_or_company_id text,
+  enabled_capabilities jsonb not null default '[]'::jsonb,
+  secret_status text not null default 'not_configured',
+  updated_by_user_id text references users(user_id),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists integration_sync_history (
+  sync_run_id text primary key,
+  integration_connection_id text not null references integrations(integration_connection_id),
+  mode text not null,
+  status text not null,
+  counts jsonb not null default '{}'::jsonb,
+  applied_rows jsonb not null default '[]'::jsonb,
+  skipped_rows jsonb not null default '[]'::jsonb,
+  conflict_rows jsonb not null default '[]'::jsonb,
+  applied_by_user_id text references users(user_id),
+  applied_at timestamptz not null default now()
+);
+
+create index if not exists idx_integration_sync_history_connection_applied on integration_sync_history(integration_connection_id, applied_at desc);
 
 create table if not exists app_settings (
   setting_key text primary key,
