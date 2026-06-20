@@ -12,7 +12,7 @@ Sprint 4 added durable local JSON persistence, a repository-style store boundary
 
 Sprint 5 starts the integration-ready foundation: persistence provider diagnostics, PostgreSQL starter schema, hardened PSA adapter contracts, safer write-back audits, sync preview counts, integration capability status, artifact export, and email handoff guardrails. Sprint 6 activates PostgreSQL-backed runtime state, normalized-table reads, provider status UX, account plans, and generated-artifact review lifecycle controls.
 
-Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuration, admin-only sync preview for PSA companies/contacts, controlled sync apply stubs, and safer foundations for future imports.
+Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuration, admin-only sync preview for PSA companies/contacts, controlled sync apply stubs, and safer foundations for future imports. Sprint 8 starts production-shaped pilot hardening with a local-demo auth provider abstraction, secret-safe PSA connector diagnostics, real-connector dry-run mode metadata, and sync history source tracking.
 
 ## Current Features
 
@@ -47,6 +47,8 @@ Sprint 7 begins PSA pilot readiness with non-secret PSA integration configuratio
 - Generated artifact markdown export, evidence appendix, review lifecycle, and customer email review handoff endpoints.
 - Integration capability status and sync preview count responses.
 - Sprint 7 admin PSA integration configuration, company/contact sync preview, controlled apply stub, and sync history endpoints.
+- Sprint 8 local-demo auth/session provider metadata and explicitly demo-only user switching.
+- Sprint 8 secret-safe PSA connector diagnostics with mock and real dry-run adapter modes.
 - Admin Integrations UI for PSA configuration, sync preview/apply, and history.
 - PostgreSQL schema alignment for Sprint 7 account plan, relationship, artifact-link, and integration pilot tables.
 - Assistant prompt endpoint for call prep, risk rationale, and next actions.
@@ -88,7 +90,7 @@ npm test
 Expected result:
 
 ```text
-All Sprint 7 foundation API smoke tests passed.
+All Sprint 7/Sprint 8 foundation API smoke tests passed.
 ```
 
 ## Demo searches
@@ -215,7 +217,7 @@ npm run test:postgres
 ```
 
 
-Sprint 7 pilot endpoints:
+Sprint 7 and Sprint 8 pilot endpoints:
 
 ```text
 GET   /api/v1/session/current-user
@@ -282,3 +284,42 @@ Sprint 7 UI additions:
 - Deployment packaging.
 - Multi-tenant architecture design.
 
+
+## Sprint 8 PSA connector diagnostics
+
+Sprint 8 keeps `mock_psa` as the default safe adapter and adds real-provider dry-run modes for connector readiness checks. Real-provider modes do not call external PSA APIs yet and external writes remain disabled.
+
+Supported PSA provider modes:
+
+```text
+mock_psa
+connectwise_manage
+autotask
+```
+
+Secret material is loaded only from runtime environment variables and is never returned by API responses. Diagnostics return presence flags and missing key names only.
+
+ConnectWise Manage dry-run secret keys:
+
+```text
+ONEOP2_PSA_BASE_URL
+ONEOP2_PSA_COMPANY_ID
+ONEOP2_PSA_PUBLIC_KEY
+ONEOP2_PSA_PRIVATE_KEY
+```
+
+Autotask dry-run secret keys:
+
+```text
+ONEOP2_PSA_BASE_URL
+ONEOP2_PSA_USERNAME
+ONEOP2_PSA_SECRET
+```
+
+Admin diagnostics endpoint:
+
+```text
+GET /api/v1/admin/integrations/:integrationConnectionId/diagnostics
+```
+
+The response includes adapter mode, provider type, config completeness, secret presence flags, capabilities, and source metadata. It intentionally excludes credential values and raw secret-bearing URLs.

@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const store = require('./repositories/store');
 const dataRepository = require('./repositories/dataRepository');
 const { getPsaAdapter } = require('./integrations/psaAdapter');
+const { createSessionProvider } = require('./auth/sessionProvider');
+const { configCompleteness } = require('./security/integrationSecrets');
 
 const productEvents = [];
 function data() { return dataRepository.getData(); }
@@ -36,9 +38,10 @@ function envelope(data, meta = {}, errors = []) {
 }
 
 function byId(list, key, value) { return list.find(item => item[key] === value) || null; }
-function currentUser() { return byId(users(), 'userId', store.getState().settings.currentUserId) || byId(users(), 'userId', 'usr_am_jane'); }
-function canWriteBack() { return ['admin','account_manager','sales_rep','service_manager','security_lead','executive'].includes(currentUser()?.role); }
-function canAdmin() { return currentUser()?.role === 'admin'; }
+function sessionProvider() { return createSessionProvider({ users, store }); }
+function currentUser() { return sessionProvider().currentUser(); }
+function canWriteBack() { return sessionProvider().canWriteBack(); }
+function canAdmin() { return sessionProvider().canAdmin(); }
 function forAccount(list, accountId) { return list.filter(item => item.accountId === accountId); }
 
 function forbidden(res, message = 'Current user is not authorized for this action.') { return json(res, 403, envelope(null, {}, [{ code: 'forbidden', message }])); }
@@ -252,8 +255,33 @@ function integrationCapabilitySummary() {
 function integrationConfiguration(integrationConnectionId) {
   const config = store.getState().settings.integrationConfigurations?.[integrationConnectionId] || null;
   if (!config) return null;
-  const { clientSecret, password, apiKey, token, accessToken, refreshToken, ...safeConfig } = config;
+  const { clientSecret, password, apiKey, token, accessToken, refreshToken, privateKey, publicKey, secret, ...safeConfig } = config;
   return safeConfig;
+}
+
+function psaAdapterForIntegration(integrationConnectionId) {
+  return getPsaAdapter(integrationConfiguration(integrationConnectionId) || { providerType: 'mock_psa' });
+}
+
+function integrationDiagnostics(integration) {
+  const config = integrationConfiguration(integration.integrationConnectionId) || { providerType: 'mock_psa' };
+  const adapter = getPsaAdapter(config);
+  const status = adapter.getConnectionStatus();
+  const completeness = configCompleteness(config);
+  return {
+    integrationConnectionId: integration.integrationConnectionId,
+    systemType: integration.systemType,
+    systemName: integration.systemName,
+    providerType: config.providerType || 'mock_psa',
+    adapterMode: status.adapterMode,
+    status: status.status,
+    message: status.message,
+    config: { complete: completeness.complete, hasBaseUrl: completeness.hasBaseUrl, hasTenantOrCompanyId: completeness.hasTenantOrCompanyId },
+    secrets: completeness.secrets,
+    capabilities: status.capabilities || [],
+    source: status.source,
+    secretsReturned: false
+  };
 }
 
 function validateIntegrationConfigurationPatch(body) {
@@ -265,7 +293,7 @@ function validateIntegrationConfigurationPatch(body) {
 }
 
 function buildPsaSyncApply(integrationConnectionId, selectedRowIds = []) {
-  const preview = getPsaAdapter().previewCompanyContactSync();
+  const preview = psaAdapterForIntegration(integrationConnectionId).previewCompanyContactSync();
   const selected = new Set(selectedRowIds);
   const rows = [...preview.companies.map(row => ({ ...row, recordType: 'company' })), ...preview.contacts.map(row => ({ ...row, recordType: 'contact' }))];
   const appliedRows = [];
@@ -287,7 +315,10 @@ function buildPsaSyncApply(integrationConnectionId, selectedRowIds = []) {
     appliedRows,
     skippedRows,
     conflictRows,
-    warnings: ['Sprint 7 apply is a controlled import stub. It records selected preview rows and audit history but does not call an external PSA API.']
+    adapterMode: preview.adapterMode,
+    providerType: preview.providerType,
+    source: preview.source,
+    warnings: ['Sprint 8 apply is a controlled import stub. It records selected preview rows and audit history but does not call an external PSA API.']
   };
 }
 
@@ -476,7 +507,7 @@ async function handleApi(req, res, url) {
     const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
     if (!integration) return notFound(res, 'Integration not found.');
     if (integration.systemType !== 'psa') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Sprint 7 sync preview currently supports PSA integrations only.', field: 'integrationConnectionId' }]));
-    const preview = getPsaAdapter().previewCompanyContactSync();
+    const preview = psaAdapterForIntegration(parts[4]).previewCompanyContactSync();
     return json(res, 200, envelope({ integrationConnectionId: parts[4], systemName: integration.systemName, ...preview }));
   }
 
@@ -494,6 +525,14 @@ async function handleApi(req, res, url) {
     return json(res, 200, envelope(summary));
   }
 
+  if (req.method === 'GET' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'diagnostics') {
+    if (!requireAdmin(res)) return;
+    const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
+    if (!integration) return notFound(res, 'Integration not found.');
+    if (integration.systemType !== 'psa') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Sprint 8 diagnostics currently supports PSA integrations only.', field: 'integrationConnectionId' }]));
+    return json(res, 200, envelope(integrationDiagnostics(integration), { secretsReturned: false }));
+  }
+
   if (req.method === 'GET' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'sync-history') {
     if (!requireAdmin(res)) return;
     const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
@@ -506,17 +545,15 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/session/current-user') {
-    return json(res, 200, envelope(currentUser()));
+    const provider = sessionProvider();
+    return json(res, 200, envelope(provider.currentUserEnvelope(), provider.metadata()));
   }
 
   if (req.method === 'PATCH' && url.pathname === '/api/v1/session/current-user') {
     const body = await parseBody(req);
-    const user = byId(users(), 'userId', body.userId);
-    if (!user) return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'userId must match a seeded active user.', field: 'userId' }]));
-    const settings = store.getState().settings;
-    store.updateSettings({ ...settings, currentUserId: user.userId });
-    await store.flush();
-    return json(res, 200, envelope(user, { localDemoOnly: true }));
+    const switched = await sessionProvider().switchCurrentUser(body.userId);
+    if (!switched.user) return json(res, 400, envelope(null, switched.metadata, [{ code: 'validation_error', message: 'userId must match a seeded active user.', field: 'userId' }]));
+    return json(res, 200, envelope({ ...switched.user, auth: switched.metadata }, switched.metadata));
   }
 
   if (req.method === 'POST' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'sync') {
@@ -549,7 +586,7 @@ async function handleApi(req, res, url) {
     const fingerprint = previewFingerprint(preview.payload);
     if (body.previewFingerprint !== fingerprint) return json(res, 400, envelope(null, {}, [{ code: 'preview_fingerprint_required', message: 'Confirmed PSA task writes must include the previewFingerprint returned by preview.', field: 'previewFingerprint' }]));
     const activity = { activityId: newId('activity'), accountId: parts[3], activityType: 'psa_task_stub', title: preview.payload.title, body: preview.payload.body, status: 'open', dueDate: preview.payload.dueDate, ownerUserId: preview.payload.ownerUserId, recommendationId: preview.payload.recommendationId, createdAt: now() };
-    const adapterResult = getPsaAdapter().createTask(preview.payload);
+    const adapterResult = psaAdapterForIntegration('int_psa_demo').createTask(preview.payload);
     if (adapterResult.status === 'validation_failed') {
       const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_task_stub', targetRecordType: 'task', status: 'failed', requestPayload: preview.payload, adapterResult, recommendationId: preview.payload.recommendationId, previewFingerprint: fingerprint, error: { code: 'adapter_validation_failed', message: 'PSA adapter rejected the task payload.', missingFields: adapterResult.missingFields } });
       return json(res, 400, envelope(null, {}, [{ code: 'adapter_validation_failed', message: 'PSA adapter rejected the task payload.', missingFields: adapterResult.missingFields, auditEventId: audit.writeBackAuditEventId }]));
@@ -721,7 +758,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/integrations/psa/status') {
-    return json(res, 200, envelope(getPsaAdapter().getConnectionStatus()));
+    return json(res, 200, envelope(psaAdapterForIntegration('int_psa_demo').getConnectionStatus()));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/v1/admin/store/status') {
@@ -762,7 +799,7 @@ async function handleApi(req, res, url) {
     const payload = { accountId: parts[3], externalCompanyId: psaIdentity.externalId, title: artifact.title, body: artifact.body, generatedArtifactId: artifact.generatedArtifactId };
     const fingerprint = previewFingerprint({ ...payload, noteType: store.getState().settings.psaFieldMapping.defaultNoteType, isStub: true });
     if (body.previewFingerprint !== fingerprint) return json(res, 400, envelope(null, {}, [{ code: 'preview_fingerprint_required', message: 'Confirmed PSA note writes must include the previewFingerprint returned by preview.', field: 'previewFingerprint' }]));
-    const adapterResult = getPsaAdapter().createNote(payload);
+    const adapterResult = psaAdapterForIntegration('int_psa_demo').createNote(payload);
     if (adapterResult.status === 'validation_failed') {
       const audit = auditWriteBack({ accountId: parts[3], actionType: 'create_psa_note_stub', targetRecordType: 'note', status: 'failed', requestPayload: payload, adapterResult, generatedArtifactId: artifact.generatedArtifactId, previewFingerprint: fingerprint, error: { code: 'adapter_validation_failed', message: 'PSA adapter rejected the note payload.', missingFields: adapterResult.missingFields } });
       return json(res, 400, envelope(null, {}, [{ code: 'adapter_validation_failed', message: 'PSA adapter rejected the note payload.', missingFields: adapterResult.missingFields, auditEventId: audit.writeBackAuditEventId }]));
