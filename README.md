@@ -325,6 +325,16 @@ GET /api/v1/admin/integrations/:integrationConnectionId/diagnostics
 
 The response includes adapter mode, provider type, config completeness, secret presence flags, capabilities, and source metadata. It intentionally excludes credential values and raw secret-bearing URLs.
 
+Admin read-only PSA validation endpoints:
+
+```text
+GET /api/v1/admin/integrations/:integrationConnectionId/psa/companies?search=acme
+GET /api/v1/admin/integrations/:integrationConnectionId/psa/contacts?externalCompanyId=PSA-1001
+GET /api/v1/admin/integrations/:integrationConnectionId/psa/tickets?status=open
+```
+
+These endpoints validate company, contact, and ticket read shapes behind the PSA adapter contract. `mock_psa` returns deterministic seeded rows for pilot testing. Real-provider modes return dry-run diagnostics and empty row sets until live external reads are explicitly implemented. Responses include adapter/source metadata and never return secret values.
+
 ## Sprint 8 artifact export and email handoff
 
 Sprint 8 adds server-side markdown export files for generated artifacts:

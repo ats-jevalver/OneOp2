@@ -13,6 +13,35 @@ function validateRequired(payload, fields) {
 function sourceMetadata(providerType, adapterMode) {
   return { adapterMode, providerType, source: providerType === 'mock_psa' ? 'seeded_mock' : 'real_connector_dry_run', externalMutationAllowed: false };
 }
+function validationResult({ providerType, adapterMode, recordType, rows, status = 'ready', warnings = [], query = {} }) {
+  return {
+    mode: 'read_only_validation',
+    recordType,
+    adapterMode,
+    providerType,
+    source: sourceMetadata(providerType, adapterMode),
+    diagnosticStatus: status,
+    generatedAt: new Date().toISOString(),
+    query,
+    counts: { total: rows.length },
+    rows,
+    warnings,
+    secretsReturned: false
+  };
+}
+function containsIgnoreCase(value, query) {
+  if (!query) return true;
+  return String(value || '').toLowerCase().includes(String(query).toLowerCase());
+}
+function filterRows(rows, query = {}, fields = []) {
+  return rows.filter(row => {
+    if (query.search && !fields.some(field => containsIgnoreCase(row[field], query.search))) return false;
+    if (query.externalCompanyId && row.externalCompanyId !== query.externalCompanyId) return false;
+    if (query.status && row.status !== query.status) return false;
+    if (query.accountId && row.accountId !== query.accountId) return false;
+    return true;
+  });
+}
 function createMockPsaAdapter(config = {}) {
   const providerType = config.providerType || 'mock_psa';
   return {
@@ -20,7 +49,7 @@ function createMockPsaAdapter(config = {}) {
     key: 'mock',
     providerType,
     adapterMode: 'mock',
-    capabilities: ['status', 'company_sync_preview', 'ticket_sync_preview', 'create_task', 'create_note'],
+    capabilities: ['status', 'company_sync_preview', 'contact_sync_preview', 'ticket_sync_preview', 'company_read_validation', 'contact_read_validation', 'ticket_read_validation', 'create_task', 'create_note'],
     getConnectionStatus() {
       return {
         status: 'connected',
@@ -33,7 +62,23 @@ function createMockPsaAdapter(config = {}) {
         message: 'Using safe Sprint 8 mock PSA adapter contract. No external PSA writes are performed.'
       };
     },
-    listCompanies() { return [{ externalId: 'PSA-1001', name: 'Acme Corp' }]; },
+    listCompanies(query = {}) {
+      const rows = [
+        { externalCompanyId: 'PSA-1001', displayName: 'Acme Corp', status: 'active', accountId: 'acct_acme', lastUpdatedAt: '2026-06-15T14:30:00Z' },
+        { externalCompanyId: 'PSA-1002', displayName: 'Greenfield Dental', status: 'active', accountId: 'acct_greenfield', lastUpdatedAt: '2026-06-14T18:15:00Z' },
+        { externalCompanyId: 'PSA-2001', displayName: 'Riverbend Logistics', status: 'active', accountId: 'acct_riverbend', lastUpdatedAt: '2026-06-12T09:10:00Z' },
+        { externalCompanyId: 'PSA-3001', displayName: 'Contoso Manufacturing', status: 'prospect', accountId: null, lastUpdatedAt: '2026-06-11T16:45:00Z' }
+      ];
+      return validationResult({ providerType, adapterMode: 'mock', recordType: 'company', rows: filterRows(rows, query, ['externalCompanyId', 'displayName', 'accountId']), query });
+    },
+    listContacts(query = {}) {
+      const rows = [
+        { externalContactId: 'PSA-C-5001', externalCompanyId: 'PSA-1001', fullName: 'Tina Reynolds', email: 'tina.reynolds@acme.example', status: 'active', contactId: 'con_acme_tina' },
+        { externalContactId: 'PSA-C-5002', externalCompanyId: 'PSA-1001', fullName: 'Marcus Lee', email: 'marcus.lee@acme.example', status: 'active', contactId: 'con_acme_marcus' },
+        { externalContactId: 'PSA-C-6001', externalCompanyId: 'PSA-3001', fullName: 'Priya Shah', email: 'priya.shah@contoso.example', status: 'active', contactId: null }
+      ];
+      return validationResult({ providerType, adapterMode: 'mock', recordType: 'contact', rows: filterRows(rows, query, ['externalContactId', 'externalCompanyId', 'fullName', 'email', 'contactId']), query });
+    },
     previewCompanyContactSync() {
       const companies = [
         { rowId: 'psa_company_1001', externalCompanyId: 'PSA-1001', displayName: 'Acme Corp', action: 'matched', matchConfidence: 0.99, accountId: 'acct_acme', reason: 'Confirmed PSA external identity already exists.' },
@@ -61,7 +106,14 @@ function createMockPsaAdapter(config = {}) {
         warnings: ['Preview only. No PSA company or contact rows were imported.', 'Conflict rows require explicit admin review before apply.']
       };
     },
-    listTickets() { return []; },
+    listTickets(query = {}) {
+      const rows = [
+        { externalTicketId: 'PSA-T-9001', externalCompanyId: 'PSA-1001', title: 'MFA rollout follow-up', status: 'open', priority: 'high', accountId: 'acct_acme' },
+        { externalTicketId: 'PSA-T-9002', externalCompanyId: 'PSA-1001', title: 'Aging workstation patch gap', status: 'open', priority: 'medium', accountId: 'acct_acme' },
+        { externalTicketId: 'PSA-T-9101', externalCompanyId: 'PSA-2001', title: 'Duplicate company mapping review', status: 'waiting_customer', priority: 'medium', accountId: 'acct_riverbend' }
+      ];
+      return validationResult({ providerType, adapterMode: 'mock', recordType: 'ticket', rows: filterRows(rows, query, ['externalTicketId', 'externalCompanyId', 'title', 'accountId']), query });
+    },
     createTask(payload) {
       const validation = validateRequired(payload, ['accountId', 'externalCompanyId', 'title', 'body', 'ownerUserId', 'recommendationId']);
       if (!validation.ok) return { status: 'validation_failed', missingFields: validation.missing };
@@ -80,7 +132,7 @@ function createRealPsaAdapter(config = {}, env = process.env) {
   const providerType = config.providerType;
   const completeness = configCompleteness(config, env);
   const adapterName = providerType === 'autotask' ? 'Autotask PSA Adapter Spike' : 'ConnectWise Manage PSA Adapter Spike';
-  const capabilities = ['status', 'company_sync_preview', 'contact_sync_preview', 'ticket_sync_preview'];
+  const capabilities = ['status', 'company_sync_preview', 'contact_sync_preview', 'ticket_sync_preview', 'company_read_validation', 'contact_read_validation', 'ticket_read_validation'];
   function statusPayload() {
     return {
       status: completeness.complete ? 'ready_dry_run' : 'not_configured',
@@ -104,7 +156,14 @@ function createRealPsaAdapter(config = {}, env = process.env) {
     adapterMode: 'real_dry_run',
     capabilities,
     getConnectionStatus: statusPayload,
-    listCompanies() { return []; },
+    listCompanies(query = {}) {
+      const status = statusPayload();
+      return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'company', rows: [], status: status.status, query, warnings: [status.message, 'Read-only company validation is dry-run only in Sprint 8; no external PSA call was made.'] });
+    },
+    listContacts(query = {}) {
+      const status = statusPayload();
+      return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'contact', rows: [], status: status.status, query, warnings: [status.message, 'Read-only contact validation is dry-run only in Sprint 8; no external PSA call was made.'] });
+    },
     previewCompanyContactSync() {
       const status = statusPayload();
       return {
@@ -121,7 +180,10 @@ function createRealPsaAdapter(config = {}, env = process.env) {
         warnings: [status.message, 'Sprint 8 real connector spike performs diagnostics only and does not call or mutate the external PSA.']
       };
     },
-    listTickets() { return []; },
+    listTickets(query = {}) {
+      const status = statusPayload();
+      return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'ticket', rows: [], status: status.status, query, warnings: [status.message, 'Read-only ticket validation is dry-run only in Sprint 8; no external PSA call was made.'] });
+    },
     createTask() { return { status: 'write_disabled', adapter: providerType, adapterMode: 'real_dry_run', message: 'External PSA writes are disabled for Sprint 8 real connector spike.' }; },
     createNote() { return { status: 'write_disabled', adapter: providerType, adapterMode: 'real_dry_run', message: 'External PSA writes are disabled for Sprint 8 real connector spike.' }; }
   };

@@ -263,6 +263,23 @@ function psaAdapterForIntegration(integrationConnectionId) {
   return getPsaAdapter(integrationConfiguration(integrationConnectionId) || { providerType: 'mock_psa' });
 }
 
+function psaValidationQuery(url) {
+  return {
+    search: url.searchParams.get('search') || undefined,
+    accountId: url.searchParams.get('accountId') || undefined,
+    externalCompanyId: url.searchParams.get('externalCompanyId') || undefined,
+    status: url.searchParams.get('status') || undefined
+  };
+}
+
+function psaReadValidation(integrationConnectionId, recordType, query) {
+  const adapter = psaAdapterForIntegration(integrationConnectionId);
+  if (recordType === 'companies') return adapter.listCompanies(query);
+  if (recordType === 'contacts') return adapter.listContacts(query);
+  if (recordType === 'tickets') return adapter.listTickets(query);
+  return null;
+}
+
 function integrationDiagnostics(integration) {
   const config = integrationConfiguration(integration.integrationConnectionId) || { providerType: 'mock_psa' };
   const adapter = getPsaAdapter(config);
@@ -576,6 +593,15 @@ async function handleApi(req, res, url) {
     store.add('activities', { activityId: newId('activity'), accountId: null, activityType: 'integration_sync_apply_stub', title: `${integration.systemName} sync apply stub`, body: `Applied ${summary.counts.applied} preview rows with ${summary.counts.conflicts} conflicts.`, status: summary.status, createdByUserId: currentUser()?.userId, createdAt: summary.appliedAt });
     await store.flush();
     return json(res, 200, envelope(summary));
+  }
+
+  if (req.method === 'GET' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'psa' && ['companies', 'contacts', 'tickets'].includes(parts[6])) {
+    if (!requireAdmin(res)) return;
+    const integration = byId(integrations(), 'integrationConnectionId', parts[4]);
+    if (!integration) return notFound(res, 'Integration not found.');
+    if (integration.systemType !== 'psa') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Sprint 8 PSA read validation endpoints support PSA integrations only.', field: 'integrationConnectionId' }]));
+    const payload = psaReadValidation(parts[4], parts[6], psaValidationQuery(url));
+    return json(res, 200, envelope({ integrationConnectionId: parts[4], systemName: integration.systemName, ...payload }, { secretsReturned: false }));
   }
 
   if (req.method === 'GET' && parts[2] === 'admin' && parts[3] === 'integrations' && parts[5] === 'diagnostics') {

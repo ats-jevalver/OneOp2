@@ -127,6 +127,26 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.secrets.configured, true);
     assert.equal(result.body.data.secretsReturned, false);
 
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/psa/companies?search=acme');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.adapterMode, 'mock');
+    assert.equal(result.body.data.recordType, 'company');
+    assert.equal(result.body.data.source.externalMutationAllowed, false);
+    assert.ok(result.body.data.rows.some(row => row.externalCompanyId === 'PSA-1001'));
+    assert.equal(JSON.stringify(result.body).includes('apiKey'), false);
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/psa/contacts?externalCompanyId=PSA-1001');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.recordType, 'contact');
+    assert.equal(result.body.data.counts.total, 2);
+    assert.ok(result.body.data.rows.some(row => row.email === 'tina.reynolds@acme.example'));
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/psa/tickets?status=open');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.recordType, 'ticket');
+    assert.ok(result.body.data.rows.every(row => row.status === 'open'));
+    assert.ok(result.body.data.rows.some(row => row.externalTicketId === 'PSA-T-9001'));
+
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync-preview', { method: 'POST' });
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.mode, 'preview');
@@ -169,6 +189,13 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.adapterMode, 'real_dry_run');
     assert.equal(result.body.data.counts.total, 0);
     assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_TEST_SECRET'), false);
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/psa/companies?search=acme');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.adapterMode, 'real_dry_run');
+    assert.equal(result.body.data.counts.total, 0);
+    assert.ok(result.body.data.warnings.some(message => message.includes('dry-run')));
+    assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_TEST_SECRET'), false);
     if (previousSecret === undefined) delete process.env.ONEOP2_PSA_PRIVATE_KEY; else process.env.ONEOP2_PSA_PRIVATE_KEY = previousSecret;
 
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/configuration', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ providerType: 'mock_psa', environmentLabel: 'Sprint 8 Smoke Test', baseUrl: 'mock://psa/sprint8', tenantOrCompanyId: 'demo-tenant', enabledCapabilities: ['company_sync_preview', 'contact_sync_preview', 'create_task'] }) });
@@ -178,6 +205,9 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.response.status, 200);
 
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/diagnostics');
+    assert.equal(result.response.status, 403);
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/psa/companies');
     assert.equal(result.response.status, 403);
 
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/configuration');
