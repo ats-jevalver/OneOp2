@@ -140,6 +140,7 @@ POST /api/v1/accounts/:accountId/psa/notes/preview
 POST /api/v1/accounts/:accountId/psa/notes
 POST /api/v1/accounts/:accountId/artifacts/qbr-draft
 GET  /api/v1/generated-artifacts/:generatedArtifactId/export?format=markdown
+POST /api/v1/generated-artifacts/:generatedArtifactId/export-file?format=markdown
 POST /api/v1/accounts/:accountId/artifacts/customer-email-draft
 POST /api/v1/generated-artifacts/:generatedArtifactId/email-handoff
 POST /api/v1/accounts/:accountId/assistant/ask
@@ -323,3 +324,36 @@ GET /api/v1/admin/integrations/:integrationConnectionId/diagnostics
 ```
 
 The response includes adapter mode, provider type, config completeness, secret presence flags, capabilities, and source metadata. It intentionally excludes credential values and raw secret-bearing URLs.
+
+## Sprint 8 artifact export and email handoff
+
+Sprint 8 adds server-side markdown export files for generated artifacts:
+
+```text
+POST /api/v1/generated-artifacts/:generatedArtifactId/export-file?format=markdown
+```
+
+Exported files are written under the local ignored folder:
+
+```text
+artifacts/exports/
+```
+
+The export response includes file name, safe relative path, byte count, markdown body, evidence appendix, and review warnings. Draft artifacts can be exported for local pilot testing but return a warning; reviewed or approved artifacts return no review warning.
+
+Customer email handoff now returns a Buffaly prepare-email-shaped payload without sending email:
+
+```json
+{
+  "prepareEmail": {
+    "To": ["primary.contact@example.com"],
+    "Cc": [],
+    "Bcc": [],
+    "Subject": "...",
+    "Body": "...",
+    "BodyFormat": "text"
+  }
+}
+```
+
+Draft email artifacts return `review_required`; reviewed or approved email artifacts return `ready_for_review`. The endpoint remains no-send by design.

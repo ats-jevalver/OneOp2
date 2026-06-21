@@ -319,6 +319,14 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.status, 'reviewed');
     assert.equal(result.body.data.reviewNotes, 'Validated in Sprint 6 smoke test.');
 
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${qbrArtifactId}/export-file?format=markdown`, { method: 'POST' });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.exportFormat, 'markdown');
+    assert.ok(result.body.data.relativePath.startsWith('artifacts/exports/'));
+    assert.ok(result.body.data.fileName.endsWith('.md'));
+    assert.ok(result.body.data.bytesWritten > 0);
+    assert.equal(result.body.data.warnings.length, 0);
+
     result = await request(baseUrl, `/api/v1/generated-artifacts/${qbrArtifactId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'published' }) });
     assert.equal(result.response.status, 400);
 
@@ -329,8 +337,20 @@ async function request(baseUrl, path, options = {}) { const response = await fet
 
     result = await request(baseUrl, `/api/v1/generated-artifacts/${emailArtifactId}/email-handoff`, { method: 'POST' });
     assert.equal(result.response.status, 200);
-    assert.equal(result.body.data.status, 'ready_for_review');
+    assert.equal(result.body.data.status, 'review_required');
+    assert.ok(result.body.data.warnings.length >= 1);
     assert.ok(result.body.data.guardrails.length >= 2);
+    assert.ok(result.body.data.prepareEmail.To.includes('tina.reynolds@acme.example'));
+    assert.equal(result.body.data.prepareEmail.BodyFormat, 'text');
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${emailArtifactId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'reviewed', reviewNotes: 'Email reviewed for customer handoff.' }) });
+    assert.equal(result.response.status, 200);
+
+    result = await request(baseUrl, `/api/v1/generated-artifacts/${emailArtifactId}/email-handoff`, { method: 'POST' });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.status, 'ready_for_review');
+    assert.equal(result.body.data.warnings.length, 0);
+    assert.ok(result.body.data.recipientSuggestions.some(contact => contact.email === 'tina.reynolds@acme.example'));
 
     const brief = await request(baseUrl, '/api/v1/accounts/acct_acme/artifacts/account-brief', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) });
     const notePreview = await request(baseUrl, '/api/v1/accounts/acct_acme/psa/notes/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ generatedArtifactId: brief.body.data.generatedArtifactId }) });

@@ -381,6 +381,59 @@ function accountPlanDto(accountId) {
   return { ...plan, ...overlay, owner: userSummary(plan.ownerUserId), objectives, risks, nextSteps, stakeholders, linkedArtifacts };
 }
 
+function artifactEvidenceAppendix(artifact) {
+  const evidence = evidenceForIds(artifact.evidenceItemIds || []);
+  const evidenceAppendix = evidence.length ? `\n\n## Evidence Appendix\n${evidence.map(ev => `- ${ev.sourceSystemName} / ${ev.sourceRecordType} / ${ev.sourceRecordId}: ${ev.summary}`).join('\n')}` : '';
+  return { evidence, evidenceAppendix, body: `${artifact.body}${evidenceAppendix}` };
+}
+
+function safeExportFileName(artifact) {
+  const base = `${artifact.generatedArtifactId}-${artifact.title || 'artifact'}`.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 120);
+  return `${base || artifact.generatedArtifactId}.md`;
+}
+
+function exportArtifactToFile(artifact) {
+  const outputRoot = path.join(__dirname, '..', 'artifacts', 'exports');
+  fs.mkdirSync(outputRoot, { recursive: true });
+  const fileName = safeExportFileName(artifact);
+  const filePath = path.join(outputRoot, fileName);
+  const relativePath = path.join('artifacts', 'exports', fileName).replace(/\\/g, '/');
+  const composed = artifactEvidenceAppendix(artifact);
+  fs.writeFileSync(filePath, composed.body, 'utf8');
+  return { generatedArtifactId: artifact.generatedArtifactId, exportFormat: 'markdown', fileName, relativePath, bytesWritten: Buffer.byteLength(composed.body, 'utf8'), body: composed.body, evidence: composed.evidence };
+}
+
+function artifactReviewWarnings(artifact, action) {
+  return ['reviewed', 'approved'].includes(artifact.status) ? [] : [`${action} is allowed for local pilot testing, but artifact status is ${artifact.status}. Review or approve before customer use.`];
+}
+
+function emailHandoffPayload(artifact) {
+  const account = byId(accounts(), 'accountId', artifact.accountId);
+  const recipient = primaryContact(artifact.accountId);
+  const subjectMatch = artifact.body.match(/^Subject:\s*(.+)$/m);
+  const subject = subjectMatch?.[1] || artifact.title;
+  const body = artifact.body.replace(/^Subject:\s*.+\n\n?/m, '');
+  const warnings = artifactReviewWarnings(artifact, 'Email handoff');
+  return {
+    generatedArtifactId: artifact.generatedArtifactId,
+    status: warnings.length ? 'review_required' : 'ready_for_review',
+    account: account ? { accountId: account.accountId, displayName: account.displayName } : null,
+    prepareEmail: {
+      To: recipient?.email ? [recipient.email] : [],
+      Cc: [],
+      Bcc: [],
+      Subject: subject,
+      Body: body,
+      BodyFormat: 'text'
+    },
+    recipientSuggestions: recipient ? [{ contactId: recipient.contactId, fullName: recipient.fullName, email: recipient.email, isPrimaryContact: Boolean(recipient.isPrimaryContact) }] : [],
+    bodyFormat: 'text',
+    subject,
+    body,
+    warnings,
+    guardrails: ['Human approval required before send.', 'Evidence-linked claims only.', 'No direct send is performed by this MVP.']
+  };
+}
 function json(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(body, null, 2));
@@ -826,16 +879,23 @@ async function handleApi(req, res, url) {
   if (req.method === 'GET' && parts[2] === 'generated-artifacts' && parts[4] === 'export') {
     const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
     if (!artifact) return notFound(res, 'Generated artifact not found.');
-    const evidence = evidenceForIds(artifact.evidenceItemIds || []);
-    const evidenceAppendix = evidence.length ? `\n\n## Evidence Appendix\n${evidence.map(ev => `- ${ev.sourceSystemName} / ${ev.sourceRecordType} / ${ev.sourceRecordId}: ${ev.summary}`).join('\n')}` : '';
-    return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, exportFormat: url.searchParams.get('format') || 'markdown', fileName: `${artifact.generatedArtifactId}.md`, body: `${artifact.body}${evidenceAppendix}`, evidence }));
+    const composed = artifactEvidenceAppendix(artifact);
+    return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, exportFormat: url.searchParams.get('format') || 'markdown', fileName: `${artifact.generatedArtifactId}.md`, body: composed.body, evidence: composed.evidence, warnings: artifactReviewWarnings(artifact, 'Export') }));
+  }
+
+  if (req.method === 'POST' && parts[2] === 'generated-artifacts' && parts[4] === 'export-file') {
+    const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
+    if (!artifact) return notFound(res, 'Generated artifact not found.');
+    if ((url.searchParams.get('format') || 'markdown') !== 'markdown') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Only markdown export is supported in Sprint 8.', field: 'format' }]));
+    const exported = exportArtifactToFile(artifact);
+    return json(res, 200, envelope({ ...exported, warnings: artifactReviewWarnings(artifact, 'Export') }));
   }
 
   if (req.method === 'POST' && parts[2] === 'generated-artifacts' && parts[4] === 'email-handoff') {
     const artifact = store.find('generatedArtifacts', a => a.generatedArtifactId === parts[3]);
     if (!artifact) return notFound(res, 'Generated artifact not found.');
     if (artifact.artifactType !== 'customer_email_draft') return json(res, 400, envelope(null, {}, [{ code: 'validation_error', message: 'Only customer_email_draft artifacts can be prepared for email handoff.', field: 'generatedArtifactId' }]));
-    return json(res, 200, envelope({ generatedArtifactId: artifact.generatedArtifactId, status: 'ready_for_review', bodyFormat: 'text', subject: artifact.title, body: artifact.body, guardrails: ['Human approval required before send.', 'Evidence-linked claims only.', 'No direct send is performed by this MVP.'] }));
+    return json(res, 200, envelope(emailHandoffPayload(artifact)));
   }
   if (req.method === 'POST' && parts[2] === 'accounts' && parts[4] === 'assistant' && parts[5] === 'ask') {
     if (!ensureAccount(res, parts[3])) return;
