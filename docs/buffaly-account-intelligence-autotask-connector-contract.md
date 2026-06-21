@@ -49,7 +49,7 @@ ONEOP2_PSA_USERNAME
 ONEOP2_PSA_SECRET
 ```
 
-Sprint 9 may add Autotask-specific aliases if needed, but aliases must resolve into the same internal contract and must not be returned by APIs:
+Sprint 9 supports Autotask-specific aliases that resolve into the same internal contract and must not be returned by APIs:
 
 ```text
 ONEOP2_AUTOTASK_BASE_URL

@@ -198,6 +198,40 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_TEST_SECRET'), false);
     if (previousSecret === undefined) delete process.env.ONEOP2_PSA_PRIVATE_KEY; else process.env.ONEOP2_PSA_PRIVATE_KEY = previousSecret;
 
+    const previousAutotask = {
+      baseUrl: process.env.ONEOP2_AUTOTASK_BASE_URL,
+      username: process.env.ONEOP2_AUTOTASK_USERNAME,
+      secret: process.env.ONEOP2_AUTOTASK_SECRET,
+      integrationCode: process.env.ONEOP2_AUTOTASK_INTEGRATION_CODE
+    };
+    process.env.ONEOP2_AUTOTASK_BASE_URL = 'https://autotask.example.test';
+    process.env.ONEOP2_AUTOTASK_USERNAME = 'DO_NOT_LEAK_AUTOTASK_USERNAME';
+    process.env.ONEOP2_AUTOTASK_SECRET = 'DO_NOT_LEAK_AUTOTASK_SECRET';
+    process.env.ONEOP2_AUTOTASK_INTEGRATION_CODE = 'DO_NOT_LEAK_AUTOTASK_CODE';
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/configuration', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ providerType: 'autotask', environmentLabel: 'Sprint 9 Autotask Alias Dry Run', baseUrl: '' }) });
+    assert.equal(result.response.status, 400);
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/configuration', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ providerType: 'autotask', environmentLabel: 'Sprint 9 Autotask Alias Dry Run', enabledCapabilities: ['company_read_validation', 'contact_read_validation', 'ticket_read_validation'] }) });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.providerType, 'autotask');
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/diagnostics');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.providerType, 'autotask');
+    assert.equal(result.body.data.status, 'ready_dry_run');
+    assert.equal(result.body.data.config.hasTenantOrCompanyId, true);
+    assert.equal(result.body.data.secrets.presence.ONEOP2_PSA_USERNAME, true);
+    assert.equal(result.body.data.secrets.presence.ONEOP2_AUTOTASK_INTEGRATION_CODE, true);
+    assert.equal(result.body.data.secrets.aliasPresence.ONEOP2_PSA_USERNAME.ONEOP2_AUTOTASK_USERNAME, true);
+    assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_AUTOTASK'), false);
+    for (const [key, value] of Object.entries(previousAutotask)) {
+      if (value === undefined) delete process.env[`ONEOP2_AUTOTASK_${key === 'baseUrl' ? 'BASE_URL' : key === 'integrationCode' ? 'INTEGRATION_CODE' : key.toUpperCase()}`];
+    }
+    if (previousAutotask.baseUrl !== undefined) process.env.ONEOP2_AUTOTASK_BASE_URL = previousAutotask.baseUrl;
+    if (previousAutotask.username !== undefined) process.env.ONEOP2_AUTOTASK_USERNAME = previousAutotask.username;
+    if (previousAutotask.secret !== undefined) process.env.ONEOP2_AUTOTASK_SECRET = previousAutotask.secret;
+    if (previousAutotask.integrationCode !== undefined) process.env.ONEOP2_AUTOTASK_INTEGRATION_CODE = previousAutotask.integrationCode;
+
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/configuration', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ providerType: 'mock_psa', environmentLabel: 'Sprint 8 Smoke Test', baseUrl: 'mock://psa/sprint8', tenantOrCompanyId: 'demo-tenant', enabledCapabilities: ['company_sync_preview', 'contact_sync_preview', 'create_task'] }) });
     assert.equal(result.response.status, 200);
 

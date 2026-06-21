@@ -331,6 +331,17 @@ ONEOP2_PSA_USERNAME
 ONEOP2_PSA_SECRET
 ```
 
+Autotask-specific aliases are also supported for Sprint 9 connector setup:
+
+```text
+ONEOP2_AUTOTASK_BASE_URL
+ONEOP2_AUTOTASK_USERNAME
+ONEOP2_AUTOTASK_SECRET
+ONEOP2_AUTOTASK_INTEGRATION_CODE
+```
+
+The integration code is treated as secret material. Diagnostics return presence flags for these aliases but never return values.
+
 Admin diagnostics endpoint:
 
 ```text
