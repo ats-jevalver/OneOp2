@@ -383,7 +383,7 @@ Run the Sprint 8 pilot readiness validator:
 npm run validate:environment
 ```
 
-The validator checks Node version, dependency/app module loading, selected store provider, optional PostgreSQL connectivity, `npm test`, and `npm run test:postgres` when `ONEOP2_DATABASE_URL` is configured. It returns JSON, redacts database credentials, and reports actionable recommendations when PostgreSQL is not configured in the current process.
+The validator checks Node version, dependency/app module loading, selected store provider, optional PostgreSQL connectivity, `npm test`, the `npm run test:ui` browser JavaScript syntax check, and `npm run test:postgres` when `ONEOP2_DATABASE_URL` is configured. It returns JSON, redacts database credentials, and reports actionable recommendations when PostgreSQL is not configured in the current process.
 
 Sprint 8 pilot demo steps are documented in:
 

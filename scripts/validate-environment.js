@@ -36,6 +36,7 @@ async function main() {
   const nodeMajor = parseMajor(process.version);
   const packageInstall = run('node', ['-e', "require('pg'); require('./src/app'); console.log('ok')"]);
   const npmTest = run('npm', ['test']);
+  const uiTest = run('npm', ['run', 'test:ui']);
   const postgres = await checkPostgres();
   let postgresTest = null;
   if (postgres.configured) postgresTest = run('npm', ['run', 'test:postgres']);
@@ -45,9 +46,9 @@ async function main() {
     packageInstall: { ok: packageInstall.ok, message: packageInstall.ok ? 'Dependencies and app modules load.' : packageInstall.stderr || packageInstall.stdout },
     storeProvider: { selected: process.env.ONEOP2_STORE_PROVIDER || 'json', ok: ['json', 'postgres', undefined].includes(process.env.ONEOP2_STORE_PROVIDER || undefined) || ['json', 'postgres'].includes(process.env.ONEOP2_STORE_PROVIDER || 'json') },
     postgres,
-    tests: { npmTest: { ok: npmTest.ok, status: npmTest.status }, postgresTest: postgresTest ? { ok: postgresTest.ok, status: postgresTest.status } : { ok: true, skipped: true, message: 'Skipped because ONEOP2_DATABASE_URL is not set.' } }
+    tests: { npmTest: { ok: npmTest.ok, status: npmTest.status }, uiTest: { ok: uiTest.ok, status: uiTest.status }, postgresTest: postgresTest ? { ok: postgresTest.ok, status: postgresTest.status } : { ok: true, skipped: true, message: 'Skipped because ONEOP2_DATABASE_URL is not set.' } }
   };
-  const ok = checks.node.ok && checks.packageInstall.ok && checks.storeProvider.ok && npmTest.ok && (!postgresTest || postgresTest.ok) && (!postgres.configured || postgres.connected);
+  const ok = checks.node.ok && checks.packageInstall.ok && checks.storeProvider.ok && npmTest.ok && uiTest.ok && (!postgresTest || postgresTest.ok) && (!postgres.configured || postgres.connected);
   const summary = {
     ok,
     generatedAt: new Date().toISOString(),
@@ -59,6 +60,7 @@ async function main() {
   if (!postgres.configured) summary.recommendations.push('Set ONEOP2_DATABASE_URL to validate PostgreSQL-backed pilot mode.');
   if (postgres.configured && !postgres.connected) summary.recommendations.push('Verify PostgreSQL is running and the redacted ONEOP2_DATABASE_URL points to the OneOp2 database.');
   if (!npmTest.ok) summary.recommendations.push('Fix failing JSON-mode smoke tests before pilot demo.');
+  if (!uiTest.ok) summary.recommendations.push('Fix failing public UI syntax/readiness checks before pilot demo.');
   if (postgresTest && !postgresTest.ok) summary.recommendations.push('Fix failing PostgreSQL read smoke tests before PostgreSQL pilot demo.');
 
   console.log(JSON.stringify(summary, null, 2));
