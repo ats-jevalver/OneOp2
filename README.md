@@ -273,17 +273,24 @@ Sprint 7 UI additions:
 - `npm run test:postgres` with `ONEOP2_DATABASE_URL` set
 - Confirm no secrets are committed or returned by configuration APIs.
 
-## Sprint 8 Candidates
+## Sprint 8 Delivery Summary
 
-- Real PSA connector spike using user-provided credentials.
-- Production authentication/session model to replace demo user switching.
-- Real RMM read integration spike.
-- Real Microsoft 365/security read integration spike.
-- QBR export to PDF or PowerPoint.
-- Buffaly prepare-email handoff for reviewed customer email drafts.
-- Buffaly assistant with conversational memory.
-- Deployment packaging.
-- Multi-tenant architecture design.
+Sprint 8 moved OneOp2 from a PSA-pilot-ready demo toward a production-shaped pilot foundation:
+
+- Local-demo auth now flows through an explicit session provider abstraction and marks user switching as unsafe for production.
+- PSA integration credentials use runtime secret presence diagnostics; API responses never return secret values.
+- PSA connector mode now distinguishes deterministic `mock_psa` from real-provider `real_dry_run` diagnostics.
+- Admin users can run connector diagnostics, sync preview/apply stubs, sync history, and read-only PSA company/contact/ticket validation checks.
+- Reviewed QBR/customer artifacts can be exported to local markdown files with evidence appendices.
+- Customer email drafts can produce Buffaly prepare-email-shaped handoff payloads without sending email.
+- Environment validation and pilot demo docs are available for repeatable setup checks.
+
+Deferred to Sprint 9 or later:
+
+- Production identity provider integration and multi-tenant authorization.
+- Live external PSA reads/writes beyond dry-run diagnostics.
+- Real RMM, Microsoft 365, and security read integrations.
+- PDF/PowerPoint QBR export and hosted deployment packaging.
 
 
 ## Sprint 8 PSA connector diagnostics

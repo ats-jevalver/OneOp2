@@ -58,7 +58,17 @@ Expected local JSON-mode result:
 
    Call out adapter mode, provider type, capabilities, config completeness, and secret presence flags. Confirm no secret values are returned.
 
-5. Run PSA sync preview and apply selected safe rows.
+5. Show read-only PSA company/contact/ticket validation.
+
+   ```text
+   GET /api/v1/admin/integrations/int_psa_demo/psa/companies?search=acme
+   GET /api/v1/admin/integrations/int_psa_demo/psa/contacts?externalCompanyId=PSA-1001
+   GET /api/v1/admin/integrations/int_psa_demo/psa/tickets?status=open
+   ```
+
+   Call out that mock mode returns deterministic seeded rows, real-provider mode is dry-run diagnostics only, and responses include source metadata without secrets.
+
+6. Run PSA sync preview and apply selected safe rows.
 
    ```text
    POST /api/v1/admin/integrations/int_psa_demo/sync-preview
@@ -67,7 +77,7 @@ Expected local JSON-mode result:
 
    Call out that source metadata identifies mock vs real dry-run mode and external mutation is disabled.
 
-6. Generate and review a QBR draft.
+7. Generate and review a QBR draft.
 
    ```text
    POST /api/v1/accounts/acct_acme/artifacts/qbr-draft
@@ -75,7 +85,7 @@ Expected local JSON-mode result:
    { "status": "reviewed" }
    ```
 
-7. Export the reviewed QBR to a local markdown file.
+8. Export the reviewed QBR to a local markdown file.
 
    ```text
    POST /api/v1/generated-artifacts/:generatedArtifactId/export-file?format=markdown
@@ -83,7 +93,7 @@ Expected local JSON-mode result:
 
    Call out the safe relative path under `artifacts/exports/` and evidence appendix.
 
-8. Generate a customer email draft and show prepare-email handoff.
+9. Generate a customer email draft and show prepare-email handoff.
 
    ```text
    POST /api/v1/accounts/acct_acme/artifacts/customer-email-draft
@@ -92,7 +102,7 @@ Expected local JSON-mode result:
 
    Call out `review_required` for drafts, recipient suggestions, prepare-email payload shape, and no-send guardrails.
 
-9. Mark the email reviewed and show handoff readiness again.
+10. Mark the email reviewed and show handoff readiness again.
 
    ```text
    PATCH /api/v1/generated-artifacts/:generatedArtifactId
@@ -102,7 +112,7 @@ Expected local JSON-mode result:
 
    Confirm the status becomes `ready_for_review` and no send occurs.
 
-10. Re-run validation.
+11. Re-run validation.
 
     ```bash
     npm run validate:environment
