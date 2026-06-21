@@ -342,6 +342,8 @@ ONEOP2_AUTOTASK_INTEGRATION_CODE
 
 The integration code is treated as secret material. Diagnostics return presence flags for these aliases but never return values.
 
+Sprint 9 adds an Autotask read-only client boundary at `src/integrations/autotaskClient.js`. The boundary validates configuration, redacts credential-bearing URLs, returns deterministic fixture reads while live reads are disabled, and fails closed until a live Autotask transport is explicitly implemented.
+
 Admin diagnostics endpoint:
 
 ```text

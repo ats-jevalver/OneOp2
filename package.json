@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node tests/api.test.js && node tests/store-provider.test.js && npm run test:ui",
+    "test": "node tests/api.test.js && node tests/store-provider.test.js && node tests/autotask-client.test.js && npm run test:ui",
     "test:ui": "node --check public/app.js",
     "test:postgres": "node tests/postgres-read.test.js",
     "validate:environment": "node scripts/validate-environment.js"

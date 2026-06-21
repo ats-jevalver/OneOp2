@@ -100,7 +100,7 @@ create_note        disabled for autotask real modes
 
 ## Autotask Client Boundary
 
-Add a small client boundary, for example:
+Sprint 9 adds a small client boundary:
 
 ```text
 src/integrations/autotaskClient.js
@@ -111,6 +111,8 @@ Suggested exported factory:
 ```js
 function createAutotaskClient({ baseUrl, username, secret, integrationCode, timeoutMs, fetchImpl })
 ```
+
+The initial boundary validates configuration, redacts credential-bearing URLs, returns deterministic fixture reads when live reads are not enabled, and fails closed for live reads until an explicit transport implementation is added.
 
 Required methods:
 
