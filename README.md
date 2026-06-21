@@ -288,9 +288,16 @@ Sprint 8 moved OneOp2 from a PSA-pilot-ready demo toward a production-shaped pil
 Deferred to Sprint 9 or later:
 
 - Production identity provider integration and multi-tenant authorization.
-- Live external PSA reads/writes beyond dry-run diagnostics.
-- Real RMM, Microsoft 365, and security read integrations.
+- Live Autotask PSA reads/writes beyond dry-run diagnostics.
+- Real DattoRMM read integration, followed by Microsoft 365 and security read integrations.
 - PDF/PowerPoint QBR export and hosted deployment packaging.
+
+Initial real integration targets:
+
+- PSA: Autotask PSA.
+- RMM: DattoRMM.
+
+Sprint 9 planning should prioritize Autotask read-only connector implementation first, then DattoRMM device/alert/patch posture reads.
 
 
 ## Sprint 8 PSA connector diagnostics

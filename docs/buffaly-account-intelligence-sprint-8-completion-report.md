@@ -64,12 +64,20 @@ Sprint 8 keeps pilot operations safe by design:
 ## Deferred to Sprint 9 or Later
 
 - Production identity provider integration and multi-tenant authorization.
-- Live external PSA reads and writes beyond dry-run diagnostics.
+- Live Autotask PSA reads and writes beyond dry-run diagnostics.
 - Field-level approval workflow for real PSA write-back.
-- Real RMM, Microsoft 365, and security read integrations.
+- Real DattoRMM device, alert, and patch posture reads.
+- Microsoft 365 and security read integrations after the Autotask/DattoRMM foundation.
 - Hosted deployment package and environment templates.
 - PDF/PowerPoint QBR export.
 
+## Initial Real Integration Targets
+
+- PSA: Autotask PSA.
+- RMM: DattoRMM.
+
+Sprint 9 planning should use Autotask PSA as the first live PSA connector target and DattoRMM as the first live RMM connector target.
+
 ## Recommended Next Step
 
-Begin Sprint 9 planning from the deferred backlog, with production identity and live PSA read-only connector implementation as the most natural next sequencing candidates.
+Begin Sprint 9 planning from the deferred backlog, with production identity, Autotask PSA read-only connector implementation, and DattoRMM read-shape design as the most natural next sequencing candidates.
