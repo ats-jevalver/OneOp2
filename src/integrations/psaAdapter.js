@@ -116,6 +116,37 @@ function previewContactFromValidation(row) {
     reason: row.matchCandidate.reason
   };
 }
+function daysBetween(startIso, endIso = '2026-06-22T00:00:00Z') {
+  if (!startIso) return null;
+  const start = Date.parse(startIso);
+  const end = Date.parse(endIso);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return Math.max(0, Math.floor((end - start) / 86400000));
+}
+function autotaskTicketRisk(row) {
+  if (row.slaStatus === 'breached' || row.priority === 'critical') return 'critical';
+  if (row.slaStatus === 'at_risk' || row.priority === 'high') return 'high';
+  if (row.priority === 'medium') return 'medium';
+  return 'low';
+}
+function autotaskTicketRow(row) {
+  return {
+    externalTicketId: row.externalTicketId,
+    externalCompanyId: row.externalCompanyId,
+    title: row.title,
+    status: row.status,
+    priority: row.priority,
+    category: row.category,
+    queue: row.queue || null,
+    accountId: row.externalCompanyId === 'AT-1001' ? 'acct_acme' : null,
+    lastUpdatedAt: row.lastUpdatedAt || null,
+    serviceSignal: {
+      ageDays: daysBetween(row.createdAt),
+      slaStatus: row.slaStatus || null,
+      riskLevel: autotaskTicketRisk(row)
+    }
+  };
+}
 function createMockPsaAdapter(config = {}) {
   const providerType = config.providerType || 'mock_psa';
   return {
@@ -287,6 +318,11 @@ function createRealPsaAdapter(config = {}, env = process.env) {
     },
     listTickets(query = {}) {
       const status = statusPayload();
+      if (providerType === 'autotask' && status.status !== 'not_configured') {
+        const clientResult = createAutotaskClientForConfig(config, env).listTickets(query);
+        const rows = clientResult.ok ? clientResult.rows.map(autotaskTicketRow) : [];
+        return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'ticket', rows, status: clientResult.status || status.status, query, warnings: clientResult.ok ? ['Autotask ticket rows are mapped from deterministic read-only fixtures into service intelligence signals; no external Autotask call was made.'] : [clientResult.message] });
+      }
       return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'ticket', rows: [], status: status.status, query, warnings: [status.message, 'Read-only ticket validation is dry-run only in Sprint 8; no external PSA call was made.'] });
     },
     createTask() { return { status: 'write_disabled', adapter: providerType, adapterMode: 'real_dry_run', message: 'External PSA writes are disabled for Sprint 8 real connector spike.' }; },

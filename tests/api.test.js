@@ -245,6 +245,18 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.ok(result.body.data.rows.some(row => row.externalContactId === 'AT-C-5002' && row.contactId === 'con_acme_marcus' && row.matchCandidate.action === 'changed'));
     assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_AUTOTASK'), false);
 
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/psa/tickets?status=open');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.providerType, 'autotask');
+    assert.equal(result.body.data.recordType, 'ticket');
+    assert.equal(result.body.data.counts.total, 1);
+    assert.equal(result.body.data.rows[0].externalTicketId, 'AT-T-9001');
+    assert.equal(result.body.data.rows[0].accountId, 'acct_acme');
+    assert.equal(result.body.data.rows[0].serviceSignal.slaStatus, 'at_risk');
+    assert.equal(result.body.data.rows[0].serviceSignal.riskLevel, 'high');
+    assert.equal(result.body.data.rows[0].serviceSignal.ageDays, 11);
+    assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_AUTOTASK'), false);
+
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync-preview', { method: 'POST' });
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.providerType, 'autotask');

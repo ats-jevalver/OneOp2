@@ -346,6 +346,8 @@ Sprint 9 adds an Autotask read-only client boundary at `src/integrations/autotas
 
 Autotask company and contact fixture reads are mapped into OneOp2 read-validation rows and sync-preview rows so account/contact identity matching can be reviewed before live Autotask reads are enabled.
 
+Autotask ticket fixture reads are mapped into OneOp2 ticket validation rows with service intelligence signals for ticket age, SLA posture, and risk level.
+
 Admin diagnostics endpoint:
 
 ```text
