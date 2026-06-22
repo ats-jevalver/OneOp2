@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { configCompleteness } = require('../security/integrationSecrets');
+const { createAutotaskClient } = require('./autotaskClient');
 
 function deterministicId(prefix, payload) {
   const hash = crypto.createHash('sha1').update(JSON.stringify(payload)).digest('hex').slice(0, 12);
@@ -41,6 +42,46 @@ function filterRows(rows, query = {}, fields = []) {
     if (query.accountId && row.accountId !== query.accountId) return false;
     return true;
   });
+}
+function configValue(config, env, primaryKey, aliases = []) {
+  if (config[primaryKey] && String(config[primaryKey]).trim()) return config[primaryKey];
+  const envKeys = [primaryKey, ...aliases];
+  for (const key of envKeys) if (env[key] && String(env[key]).trim()) return env[key];
+  return null;
+}
+function createAutotaskClientForConfig(config, env) {
+  return createAutotaskClient({
+    baseUrl: config.baseUrl || configValue(config, env, 'ONEOP2_PSA_BASE_URL', ['ONEOP2_AUTOTASK_BASE_URL']),
+    username: configValue(config, env, 'ONEOP2_PSA_USERNAME', ['ONEOP2_AUTOTASK_USERNAME']),
+    secret: configValue(config, env, 'ONEOP2_PSA_SECRET', ['ONEOP2_AUTOTASK_SECRET']),
+    integrationCode: configValue(config, env, 'ONEOP2_AUTOTASK_INTEGRATION_CODE')
+  });
+}
+function autotaskCompanyRow(row) {
+  return {
+    externalCompanyId: row.externalCompanyId,
+    displayName: row.displayName,
+    status: row.status,
+    accountId: row.displayName === 'Acme Corp' ? 'acct_acme' : row.displayName === 'Riverbend Logistics' ? 'acct_riverbend' : null,
+    primaryDomain: row.primaryDomain || null,
+    lastUpdatedAt: row.lastUpdatedAt || null,
+    matchCandidate: {
+      action: row.displayName === 'Acme Corp' ? 'matched' : row.displayName === 'Riverbend Logistics' ? 'conflict' : 'new',
+      matchConfidence: row.displayName === 'Acme Corp' ? 0.98 : row.displayName === 'Riverbend Logistics' ? 0.61 : 0.25,
+      reason: row.displayName === 'Acme Corp' ? 'Autotask company name/domain match an existing OneOp2 account.' : row.displayName === 'Riverbend Logistics' ? 'Autotask company resembles an account with mapping ambiguity.' : 'No existing OneOp2 account match found.'
+    }
+  };
+}
+function previewCompanyFromValidation(row) {
+  return {
+    rowId: `autotask_company_${row.externalCompanyId}`,
+    externalCompanyId: row.externalCompanyId,
+    displayName: row.displayName,
+    action: row.matchCandidate.action,
+    matchConfidence: row.matchCandidate.matchConfidence,
+    accountId: row.accountId,
+    reason: row.matchCandidate.reason
+  };
 }
 function createMockPsaAdapter(config = {}) {
   const providerType = config.providerType || 'mock_psa';
@@ -158,6 +199,11 @@ function createRealPsaAdapter(config = {}, env = process.env) {
     getConnectionStatus: statusPayload,
     listCompanies(query = {}) {
       const status = statusPayload();
+      if (providerType === 'autotask' && status.status !== 'not_configured') {
+        const clientResult = createAutotaskClientForConfig(config, env).listCompanies(query);
+        const rows = clientResult.ok ? clientResult.rows.map(autotaskCompanyRow) : [];
+        return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'company', rows, status: clientResult.status || status.status, query, warnings: clientResult.ok ? ['Autotask company rows are mapped from deterministic read-only fixtures; no external Autotask call was made.'] : [clientResult.message] });
+      }
       return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'company', rows: [], status: status.status, query, warnings: [status.message, 'Read-only company validation is dry-run only in Sprint 8; no external PSA call was made.'] });
     },
     listContacts(query = {}) {
@@ -166,6 +212,24 @@ function createRealPsaAdapter(config = {}, env = process.env) {
     },
     previewCompanyContactSync() {
       const status = statusPayload();
+      if (providerType === 'autotask' && status.status !== 'not_configured') {
+        const companyValidation = this.listCompanies({});
+        const companies = companyValidation.rows.map(previewCompanyFromValidation);
+        const count = action => companies.filter(row => row.action === action).length;
+        return {
+          mode: 'preview',
+          adapter: providerType,
+          adapterMode: 'real_dry_run',
+          providerType,
+          source: sourceMetadata(providerType, 'real_dry_run'),
+          generatedAt: new Date().toISOString(),
+          diagnosticStatus: companyValidation.diagnosticStatus,
+          counts: { total: companies.length, new: count('new'), matched: count('matched'), changed: count('changed'), skipped: count('skipped'), conflicts: count('conflict') },
+          companies,
+          contacts: [],
+          warnings: ['Autotask company preview uses deterministic read-only fixture mapping in Sprint 9. No external Autotask records were mutated.', 'Autotask contact mapping is planned as a follow-up Sprint 9 slice.']
+        };
+      }
       return {
         mode: 'preview',
         adapter: providerType,
@@ -195,3 +259,4 @@ function getPsaAdapter(config = {}) {
   return createMockPsaAdapter({ ...config, providerType: 'mock_psa' });
 }
 module.exports = { getPsaAdapter, createMockPsaAdapter, createRealPsaAdapter };
+

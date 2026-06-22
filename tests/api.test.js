@@ -224,6 +224,25 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.secrets.presence.ONEOP2_AUTOTASK_INTEGRATION_CODE, true);
     assert.equal(result.body.data.secrets.aliasPresence.ONEOP2_PSA_USERNAME.ONEOP2_AUTOTASK_USERNAME, true);
     assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_AUTOTASK'), false);
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/psa/companies?search=acme');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.providerType, 'autotask');
+    assert.equal(result.body.data.recordType, 'company');
+    assert.equal(result.body.data.counts.total, 1);
+    assert.equal(result.body.data.rows[0].externalCompanyId, 'AT-1001');
+    assert.equal(result.body.data.rows[0].accountId, 'acct_acme');
+    assert.equal(result.body.data.rows[0].matchCandidate.action, 'matched');
+    assert.equal(result.body.data.source.externalMutationAllowed, false);
+    assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_AUTOTASK'), false);
+
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync-preview', { method: 'POST' });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.providerType, 'autotask');
+    assert.equal(result.body.data.counts.total, 2);
+    assert.equal(result.body.data.counts.matched, 1);
+    assert.equal(result.body.data.counts.conflicts, 1);
+    assert.ok(result.body.data.companies.some(row => row.externalCompanyId === 'AT-1001' && row.action === 'matched'));
     for (const [key, value] of Object.entries(previousAutotask)) {
       if (value === undefined) delete process.env[`ONEOP2_AUTOTASK_${key === 'baseUrl' ? 'BASE_URL' : key === 'integrationCode' ? 'INTEGRATION_CODE' : key.toUpperCase()}`];
     }

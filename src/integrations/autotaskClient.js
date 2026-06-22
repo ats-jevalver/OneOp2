@@ -80,7 +80,7 @@ function createAutotaskClient(options = {}) {
       secretsReturned: false
     };
   }
-  async function guardedRead(recordType, query, fixtureRows, fields) {
+  function guardedRead(recordType, query, fixtureRows, fields) {
     const current = status();
     if (!current.ok) return createSafeError('not_configured', current.message, { missing: current.missing });
     if (!liveReadsEnabled) return fixtureResult(recordType, filterRows(fixtureRows, query, fields), query, current.status);
