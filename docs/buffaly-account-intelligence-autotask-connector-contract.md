@@ -201,7 +201,7 @@ Common query fields:
 
 The adapter remains responsible for mapping client DTOs into current OneOp2 response contracts.
 
-Sprint 9 now maps Autotask company fixture DTOs into OneOp2 company read-validation rows and company sync-preview rows. Contact and ticket mapping remain follow-up Sprint 9 slices.
+Sprint 9 now maps Autotask company and contact fixture DTOs into OneOp2 read-validation rows and sync-preview rows. Ticket mapping remains a follow-up Sprint 9 slice.
 
 ### Read validation response shape
 

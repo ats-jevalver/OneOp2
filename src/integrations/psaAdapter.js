@@ -83,6 +83,39 @@ function previewCompanyFromValidation(row) {
     reason: row.matchCandidate.reason
   };
 }
+function autotaskContactRow(row) {
+  return {
+    externalContactId: row.externalContactId,
+    externalCompanyId: row.externalCompanyId,
+    fullName: row.fullName,
+    email: row.email,
+    status: row.status,
+    contactId: row.email === 'tina.reynolds@acme.example' ? 'con_acme_tina' : row.email === 'marcus.lee@acme.example' ? 'con_acme_marcus' : null,
+    accountId: row.externalCompanyId === 'AT-1001' ? 'acct_acme' : null,
+    title: row.title || null,
+    isPrimaryContact: Boolean(row.isPrimaryContact),
+    lastUpdatedAt: row.lastUpdatedAt || null,
+    matchCandidate: {
+      action: row.email === 'tina.reynolds@acme.example' ? 'matched' : row.email === 'marcus.lee@acme.example' ? 'changed' : 'new',
+      matchConfidence: row.email === 'tina.reynolds@acme.example' ? 0.99 : row.email === 'marcus.lee@acme.example' ? 0.9 : 0.3,
+      reason: row.email === 'tina.reynolds@acme.example' ? 'Autotask contact email matches an existing primary OneOp2 contact.' : row.email === 'marcus.lee@acme.example' ? 'Autotask contact matches an existing contact with possible changed fields.' : 'No existing OneOp2 contact match found.'
+    }
+  };
+}
+function previewContactFromValidation(row) {
+  return {
+    rowId: `autotask_contact_${row.externalContactId}`,
+    externalContactId: row.externalContactId,
+    externalCompanyId: row.externalCompanyId,
+    fullName: row.fullName,
+    email: row.email,
+    action: row.matchCandidate.action,
+    matchConfidence: row.matchCandidate.matchConfidence,
+    contactId: row.contactId,
+    accountId: row.accountId,
+    reason: row.matchCandidate.reason
+  };
+}
 function createMockPsaAdapter(config = {}) {
   const providerType = config.providerType || 'mock_psa';
   return {
@@ -208,14 +241,22 @@ function createRealPsaAdapter(config = {}, env = process.env) {
     },
     listContacts(query = {}) {
       const status = statusPayload();
+      if (providerType === 'autotask' && status.status !== 'not_configured') {
+        const clientResult = createAutotaskClientForConfig(config, env).listContacts(query);
+        const rows = clientResult.ok ? clientResult.rows.map(autotaskContactRow) : [];
+        return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'contact', rows, status: clientResult.status || status.status, query, warnings: clientResult.ok ? ['Autotask contact rows are mapped from deterministic read-only fixtures; no external Autotask call was made.'] : [clientResult.message] });
+      }
       return validationResult({ providerType, adapterMode: 'real_dry_run', recordType: 'contact', rows: [], status: status.status, query, warnings: [status.message, 'Read-only contact validation is dry-run only in Sprint 8; no external PSA call was made.'] });
     },
     previewCompanyContactSync() {
       const status = statusPayload();
       if (providerType === 'autotask' && status.status !== 'not_configured') {
         const companyValidation = this.listCompanies({});
+        const contactValidation = this.listContacts({});
         const companies = companyValidation.rows.map(previewCompanyFromValidation);
-        const count = action => companies.filter(row => row.action === action).length;
+        const contacts = contactValidation.rows.map(previewContactFromValidation);
+        const allRows = [...companies, ...contacts];
+        const count = action => allRows.filter(row => row.action === action).length;
         return {
           mode: 'preview',
           adapter: providerType,
@@ -224,10 +265,10 @@ function createRealPsaAdapter(config = {}, env = process.env) {
           source: sourceMetadata(providerType, 'real_dry_run'),
           generatedAt: new Date().toISOString(),
           diagnosticStatus: companyValidation.diagnosticStatus,
-          counts: { total: companies.length, new: count('new'), matched: count('matched'), changed: count('changed'), skipped: count('skipped'), conflicts: count('conflict') },
+          counts: { total: allRows.length, new: count('new'), matched: count('matched'), changed: count('changed'), skipped: count('skipped'), conflicts: count('conflict') },
           companies,
-          contacts: [],
-          warnings: ['Autotask company preview uses deterministic read-only fixture mapping in Sprint 9. No external Autotask records were mutated.', 'Autotask contact mapping is planned as a follow-up Sprint 9 slice.']
+          contacts,
+          warnings: ['Autotask company/contact preview uses deterministic read-only fixture mapping in Sprint 9. No external Autotask records were mutated.']
         };
       }
       return {

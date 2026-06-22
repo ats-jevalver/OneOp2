@@ -236,13 +236,24 @@ async function request(baseUrl, path, options = {}) { const response = await fet
     assert.equal(result.body.data.source.externalMutationAllowed, false);
     assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_AUTOTASK'), false);
 
+    result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/psa/contacts?externalCompanyId=AT-1001');
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.data.providerType, 'autotask');
+    assert.equal(result.body.data.recordType, 'contact');
+    assert.equal(result.body.data.counts.total, 2);
+    assert.ok(result.body.data.rows.some(row => row.externalContactId === 'AT-C-5001' && row.contactId === 'con_acme_tina' && row.matchCandidate.action === 'matched'));
+    assert.ok(result.body.data.rows.some(row => row.externalContactId === 'AT-C-5002' && row.contactId === 'con_acme_marcus' && row.matchCandidate.action === 'changed'));
+    assert.equal(JSON.stringify(result.body).includes('DO_NOT_LEAK_AUTOTASK'), false);
+
     result = await request(baseUrl, '/api/v1/admin/integrations/int_psa_demo/sync-preview', { method: 'POST' });
     assert.equal(result.response.status, 200);
     assert.equal(result.body.data.providerType, 'autotask');
-    assert.equal(result.body.data.counts.total, 2);
-    assert.equal(result.body.data.counts.matched, 1);
+    assert.equal(result.body.data.counts.total, 4);
+    assert.equal(result.body.data.counts.matched, 2);
+    assert.equal(result.body.data.counts.changed, 1);
     assert.equal(result.body.data.counts.conflicts, 1);
     assert.ok(result.body.data.companies.some(row => row.externalCompanyId === 'AT-1001' && row.action === 'matched'));
+    assert.ok(result.body.data.contacts.some(row => row.externalContactId === 'AT-C-5001' && row.action === 'matched'));
     for (const [key, value] of Object.entries(previousAutotask)) {
       if (value === undefined) delete process.env[`ONEOP2_AUTOTASK_${key === 'baseUrl' ? 'BASE_URL' : key === 'integrationCode' ? 'INTEGRATION_CODE' : key.toUpperCase()}`];
     }

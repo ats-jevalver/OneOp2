@@ -344,7 +344,7 @@ The integration code is treated as secret material. Diagnostics return presence 
 
 Sprint 9 adds an Autotask read-only client boundary at `src/integrations/autotaskClient.js`. The boundary validates configuration, redacts credential-bearing URLs, returns deterministic fixture reads while live reads are disabled, and fails closed until a live Autotask transport is explicitly implemented.
 
-Autotask company fixture reads are mapped into OneOp2 read-validation rows and sync-preview company rows so account identity matching can be reviewed before live Autotask reads are enabled.
+Autotask company and contact fixture reads are mapped into OneOp2 read-validation rows and sync-preview rows so account/contact identity matching can be reviewed before live Autotask reads are enabled.
 
 Admin diagnostics endpoint:
 
